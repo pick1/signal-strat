@@ -37,6 +37,13 @@ OPENAI_API_KEY = os.getenv("SIGNAL_OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("SIGNAL_OPENAI_MODEL", "deepseek-v4-flash-free")
 FALLBACK_ENABLED = os.getenv("SIGNAL_FALLBACK_ENABLED", "true").lower() == "true"
 
+# ─── Enrichment ───────────────────────────────────────────────────────────────
+ENRICHMENT_REQUESTS = {
+    "github": True,
+    "links": True,
+    "wikipedia": False,
+}
+
 # ─── Regex Patterns ──────────────────────────────────────────────────────────
 INSTAGRAM_RE = re.compile(
     r'https?://(?:www\.)?(?:instagram\.com|instagr\.am)/'

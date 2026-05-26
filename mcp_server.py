@@ -28,7 +28,7 @@ from tinydb import TinyDB, Query
 from mcp.server.fastmcp import FastMCP
 
 from signald.db import load_entries, search_entries, get_stats, get_db
-from signald.analyzer import analyze_content, parse_json_result
+from signald.analyzer import analyze_content, run_enrichment, parse_json_result
 from signald.config import MODEL_TIERS, SOURCE_TIER, CAT_LABELS, CAT_COLORS
 
 PROJECT_DIR = Path(__file__).parent.resolve()
@@ -249,6 +249,36 @@ def signal_export(format: str = "json") -> str:
             )
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def signal_enrich_entry(entry_id: str) -> str:
+    """Run enrichment on an existing entry: extract entities, search GitHub,
+    find related repos and resources, and synthesize research findings.
+
+    Args:
+        entry_id: The entry's string ID (e.g. '1779601758639')
+    """
+    db = _get_db()
+    Entry = Query()
+    entry = db.get(Entry.id == entry_id)
+    if not entry:
+        return json.dumps({"error": f"Entry '{entry_id}' not found"})
+
+    # Get the raw content — stored content or summary
+    content = entry.get("_raw_content", "")
+    if not content:
+        content = entry.get("summary", "") + "\n" + entry.get("verdict", "")
+
+    result = run_enrichment(content, entry)
+    if result is None:
+        return json.dumps({"error": "Enrichment failed or disabled"})
+
+    # Save enrichment to the entry in DB
+    entry["enrichment"] = result
+    db.update(entry, Entry.id == entry_id)
+
+    return json.dumps(result, indent=2, default=str)
 
 
 # ─── Resources ───────────────────────────────────────────────────────────────

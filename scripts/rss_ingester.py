@@ -36,7 +36,7 @@ import requests
 
 from signald.config import PROJECT_DIR, DB_PATH
 from signald.db import save_entry
-from signald.analyzer import analyze_content
+from signald.analyzer import analyze_content, run_enrichment
 
 DATA_DIR = PROJECT_DIR / "data"
 FEEDS_CONFIG = DATA_DIR / "rss_feeds.json"
@@ -191,7 +191,7 @@ def analyze_entry(
         return None
 
 
-def save_to_db(entry: dict, analysis: dict, repo_data: list = None):
+def save_to_db(entry: dict, analysis: dict, enrichment: dict = None, repo_data: list = None):
     """Save analyzed entry to SIGNAL TinyDB database."""
     db_entry = {
         "id": str(int(time.time() * 1000)),
@@ -200,6 +200,7 @@ def save_to_db(entry: dict, analysis: dict, repo_data: list = None):
         "source_type": entry.get("source_hint", "url"),
         "repos": repo_data or [],
         **analysis,
+        "enrichment": enrichment or {},
     }
     save_entry(db_entry)
     print(f"    Saved: {analysis.get('title', 'Untitled')}")
@@ -229,7 +230,7 @@ def cmd_check():
     return total_new
 
 
-def cmd_ingest(analyze: bool = False, provider: str = "ollama"):
+def cmd_ingest(analyze: bool = False, provider: str = "ollama", enrich: bool = False):
     """Fetch feeds and optionally analyze new entries."""
     feeds = load_feeds()
     seen = load_seen()
@@ -261,7 +262,12 @@ def cmd_ingest(analyze: bool = False, provider: str = "ollama"):
                 print(f"      Analyzing...", end=" ")
                 result = analyze_entry(content, entry["source_hint"], provider)
                 if result:
-                    save_to_db(entry, result)
+                    enrichment = None
+                    if enrich:
+                        print(f"      Enriching...", end=" ")
+                        enrichment = run_enrichment(content, result)
+                        print(f"done")
+                    save_to_db(entry, result, enrichment=enrichment)
                 else:
                     print(f"      SKIPPED (analysis failed)")
 
@@ -303,6 +309,7 @@ def main():
     # ingest
     ingest_p = sub.add_parser("ingest", help="Fetch and optionally analyze new items")
     ingest_p.add_argument("--analyze", "-a", action="store_true", help="Auto-analyze new items")
+    ingest_p.add_argument("--enrich", "-e", action="store_true", help="Auto-enrich after analysis (requires --analyze)")
     ingest_p.add_argument("--provider", default="ollama", choices=["ollama", "openai"],
                           help="Analysis provider")
 
@@ -317,7 +324,7 @@ def main():
     if args.command == "check":
         cmd_check()
     elif args.command == "ingest":
-        cmd_ingest(analyze=args.analyze, provider=args.provider)
+        cmd_ingest(analyze=args.analyze, provider=args.provider, enrich=args.enrich)
     elif args.command == "list":
         cmd_list()
 

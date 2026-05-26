@@ -29,7 +29,7 @@ from signald.scrapers import (
     fetch_instagram_content,
     enrich_with_repos,
 )
-from signald.analyzer import analyze_content, set_notification_callback
+from signald.analyzer import analyze_content, run_enrichment, set_notification_callback
 
 
 # ─── Wire notifications ──────────────────────────────────────────────────────
@@ -94,6 +94,61 @@ def render_card(entry, color, label, conf, tags, date):
     work_rel     = entry.get("work_relevance", "")
     title = entry.get("title", "Untitled")
 
+    enrichment_data = entry.get("enrichment", {}) or {}
+    enrichment_html = ""
+    if enrichment_data and enrichment_data.get("github_results"):
+        gh = enrichment_data["github_results"]
+        findings = enrichment_data.get("key_findings", [])
+        resources = enrichment_data.get("resources", [])
+        enrich_time = enrichment_data.get("enrichment_time", 0)
+
+        lines = ['<div style="margin-top:12px;background:#0f0f18;border:1px solid #33cc6633;border-radius:8px;padding:12px 14px">'
+                 '<div class="section-label" style="color:#33cc66">\U0001f50d Enrichment</div>']
+
+        # GitHub repos
+        repo_items = []
+        for r in gh[:4]:
+            if "name" not in r:
+                continue
+            stars = r.get("stars", 0)
+            desc = (r.get("description", "") or "")[:120]
+            lang = r.get("language", "")
+            lang_tag = f'<span style="color:#7070a0;font-size:10px;margin-left:4px">{lang}</span>' if lang else ""
+            star_str = f'\U00002b50 {stars}' if stars else ""
+            repo_items.append(
+                f'<div style="margin:4px 0;font-size:12px">'
+                f'<a href="{r["url"]}" target="_blank" style="color:#44aaff;text-decoration:none">{r["name"]}</a>'
+                f'<span style="color:#808090"> {star_str}{lang_tag}</span><br>'
+                f'<span style="color:#606080;font-size:11px">{desc}</span>'
+                f'</div>'
+            )
+        if repo_items:
+            lines.append('<div style="margin-top:8px"><span style="color:#33cc66;font-size:11px;font-weight:600">\U0001f4c1 GitHub Repos</span></div>')
+            lines.extend(repo_items)
+
+        # Key findings
+        if findings:
+            lines.append('<div style="margin-top:8px"><span style="color:#33cc66;font-size:11px;font-weight:600">\U0001f4dd Findings</span></div>')
+            for f in findings[:3]:
+                lines.append(f'<div style="color:#a0a0c0;font-size:11px;margin:3px 0">\u25b8 {f}</div>')
+
+        # Resources
+        if resources:
+            lines.append('<div style="margin-top:8px"><span style="color:#33cc66;font-size:11px;font-weight:600">\U0001f517 Resources</span></div>')
+            for r in resources[:3]:
+                name = r.get("name", r.get("url", ""))
+                url = r.get("url", "")
+                desc = (r.get("description", "") or "")[:100]
+                lines.append(
+                    f'<div style="margin:3px 0;font-size:11px">'
+                    f'<a href="{url}" target="_blank" style="color:#44aaff">{name}</a>'
+                    f'<span style="color:#606080"> — {desc}</span></div>'
+                )
+
+        lines.append(f'<div style="color:#404060;font-size:10px;margin-top:6px">enriched in {enrich_time}s</div>')
+        lines.append('</div>')
+        enrichment_html = "".join(lines)
+
     instagram_html = ""
     meta = entry.get("instagram_meta")
     if meta:
@@ -146,6 +201,7 @@ def render_card(entry, color, label, conf, tags, date):
             '<div class="section-text">' + opencode_fit + '</div>'
           '</div>'
         '</div>'
+        + enrichment_html +
         '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #252535;padding-top:8px">'
           '<span style="color:#404060;font-size:11px">' + date + '</span>'
           '<span style="color:#404060;font-size:11px">confidence ' + str(conf) + '%'
@@ -219,6 +275,10 @@ with st.sidebar:
     )
     tier_map = {"Auto (per source type)": None, "Light": "light", "Default": "default", "Deep": "deep"}
     tier_override = tier_map[tier_choice]
+
+    st.markdown("**Enrichment**")
+    run_enrich = st.checkbox("Research entities + find repos", value=True,
+                              help="After analysis, extracts tools/repos and searches GitHub for real resources")
 
     if st.button("Lock", use_container_width=True):
         st.session_state["authenticated"] = False
@@ -327,6 +387,7 @@ if analyze_btn and input_text.strip():
     with st.spinner(f"Analyzing via {provider}..."):
         try:
             result = analyze_content(content, detected, provider, tier_override)
+            enrichment = run_enrichment(content, result) if run_enrich else None
             entry = {
                 "id": str(int(time.time() * 1000)),
                 "created_at": datetime.now().isoformat(),
@@ -335,6 +396,7 @@ if analyze_btn and input_text.strip():
                 "instagram_meta": instagram_meta,
                 "repos": repo_data,
                 **result,
+                "enrichment": enrichment or {},
             }
             save_entry(entry)
             if fetch_notice:

@@ -18,6 +18,7 @@ from signald.config import (
     OPENAI_API_KEY,
     FALLBACK_ENABLED,
     OLLAMA_MODEL,
+    ENRICHMENT_REQUESTS,
 )
 
 # Callback for UI notifications (injected by app.py if needed)
@@ -166,7 +167,7 @@ def analyze_content(
     else:
         # Ollama (default)
         try:
-            return analyze_with_ollama(content, source_hint, model)
+            result = analyze_with_ollama(content, source_hint, model)
         except Exception as e:
             if FALLBACK_ENABLED:
                 fallback_model = MODEL_TIERS["default"]["openai"]
@@ -174,3 +175,22 @@ def analyze_content(
                     _notify(f"Ollama failed ({model}), falling back to OpenAI ({fallback_model})", "W")
                     return analyze_with_openai(content, source_hint, fallback_model)
             raise
+        return result
+
+
+# ─── Enrichment Integration ──────────────────────────────────────────────────
+
+
+def run_enrichment(content: str, analysis: dict) -> dict | None:
+    """Post-analysis enrichment: extract entities, search for resources.
+
+    Returns enrichment dict or None if enrichment is disabled or fails.
+    """
+    if not any(ENRICHMENT_REQUESTS.values()):
+        return None
+    try:
+        from signald.enricher import enrich
+        return enrich(content, analysis)
+    except Exception as e:
+        _notify(f"Enrichment failed: {e}", "W")
+        return None
