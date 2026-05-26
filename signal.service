@@ -1,0 +1,18 @@
+[Unit]
+Description=SIGNAL Tech Intelligence Digest (Streamlit)
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/opt/signal
+Environment="PATH=/opt/signal/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/opt/signal/venv/bin/streamlit run app.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
