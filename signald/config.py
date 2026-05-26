@@ -95,7 +95,12 @@ Return ONLY valid JSON — no markdown, no backticks, no explanation outside the
 Categories:
 - viable: Real technology that exists and can be implemented now
 - work: Directly useful for professional/enterprise engineering contexts
-- vaporware: Announced but does not exist or likely will not ship as promised
+- vaporware: Announced but does not exist or likely will not ship as promised. IMPORTANT: Only use this when you have specific reason to believe the claim is fraudulent or the product provably does not exist. Do NOT use this for tools you simply don't recognize — treat unfamiliar tools as watch, not vaporware.
 - redundant: Already solved by existing tools, nothing new here
-- watch: Interesting but not ready, worth monitoring
-- mixed: Multiple categories apply"""
+- watch: Interesting but not ready, worth monitoring. Use this for tools you're unsure about or can't verify — it signals the need for further research, not dismissal.
+- mixed: Multiple categories apply
+
+Rules:
+- If you don't recognize a tool or product name, set category to "watch", not "vaporware"
+- Copy tool/product names exactly as they appear in the content — do not correct or guess spellings
+- The title should use the exact tool name found in the article"""
