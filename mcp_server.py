@@ -27,7 +27,10 @@ from typing import Optional
 from tinydb import TinyDB, Query
 from mcp.server.fastmcp import FastMCP
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
+from signald.db import load_entries, search_entries, get_stats, get_db
+from signald.analyzer import analyze_content, parse_json_result
+from signald.config import MODEL_TIERS, SOURCE_TIER, CAT_LABELS, CAT_COLORS
+
 PROJECT_DIR = Path(__file__).parent.resolve()
 DB_PATH = PROJECT_DIR / "data" / "signal.json"
 

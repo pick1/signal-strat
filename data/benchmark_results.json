@@ -1,0 +1,395 @@
+{
+  "timestamp": "2026-05-25T21:55:56.242432",
+  "config": {
+    "models_tested": [
+      "gemma4:e4b",
+      "qwen3:14b",
+      "deepseek-r1:14b",
+      "qwen3:latest",
+      "deepseek-r1:8b"
+    ],
+    "articles": [
+      {
+        "id": "test_1",
+        "title": "Using AI to write better code more slowly"
+      },
+      {
+        "id": "test_2",
+        "title": "Fully in-browser container builds"
+      },
+      {
+        "id": "test_3",
+        "title": "Norway's Huawei flash storage for LLM training"
+      }
+    ]
+  },
+  "model_summaries": [
+    {
+      "model": "gemma4:e4b",
+      "avg_time_seconds": 18.3,
+      "avg_quality_score": 100,
+      "ok_runs": 3,
+      "err_runs": 0
+    },
+    {
+      "model": "qwen3:14b",
+      "avg_time_seconds": 29.5,
+      "avg_quality_score": 100,
+      "ok_runs": 3,
+      "err_runs": 0
+    },
+    {
+      "model": "deepseek-r1:14b",
+      "avg_time_seconds": 32.3,
+      "avg_quality_score": 100,
+      "ok_runs": 3,
+      "err_runs": 0
+    },
+    {
+      "model": "qwen3:latest",
+      "avg_time_seconds": 21.2,
+      "avg_quality_score": 100,
+      "ok_runs": 3,
+      "err_runs": 0
+    },
+    {
+      "model": "deepseek-r1:8b",
+      "avg_time_seconds": 18.3,
+      "avg_quality_score": 100,
+      "ok_runs": 3,
+      "err_runs": 0
+    }
+  ],
+  "results": [
+    {
+      "model": "gemma4:e4b",
+      "article_id": "test_1",
+      "article_title": "Using AI to write better code more slowly",
+      "status": "ok",
+      "time_seconds": 29.88,
+      "category": "viable",
+      "confidence": 0.95,
+      "title": "AI Coding: Thinking and Validation Outpace Typing Speed",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "gemma4:e4b",
+      "article_id": "test_2",
+      "article_title": "Fully in-browser container builds",
+      "status": "ok",
+      "time_seconds": 13.11,
+      "category": "watch",
+      "confidence": 0.9,
+      "title": "WebAssembly Container Builds in Browser via Ochagavia",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "gemma4:e4b",
+      "article_id": "test_3",
+      "article_title": "Norway's Huawei flash storage for LLM training",
+      "status": "ok",
+      "time_seconds": 11.98,
+      "category": "watch",
+      "confidence": 0.95,
+      "title": "Huawei OceanStor Pacific: Geopolitics and AI Storage",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "qwen3:14b",
+      "article_id": "test_1",
+      "article_title": "Using AI to write better code more slowly",
+      "status": "ok",
+      "time_seconds": 36.24,
+      "category": "watch",
+      "confidence": 0.85,
+      "title": "AI as Rubber Ducking Partner: OpenCode Workflow Revisited",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "qwen3:14b",
+      "article_id": "test_2",
+      "article_title": "Fully in-browser container builds",
+      "status": "ok",
+      "time_seconds": 24.1,
+      "category": "viable",
+      "confidence": 0.85,
+      "title": "Ochagavia Browser-Based Container Builds with WebAssembly",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "qwen3:14b",
+      "article_id": "test_3",
+      "article_title": "Norway's Huawei flash storage for LLM training",
+      "status": "ok",
+      "time_seconds": 28.03,
+      "category": "watch",
+      "confidence": 0.85,
+      "title": "Norway Deploys Huawei Storage for AI Training Amid Geopolitical Tensions",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "deepseek-r1:14b",
+      "article_id": "test_1",
+      "article_title": "Using AI to write better code more slowly",
+      "status": "ok",
+      "time_seconds": 42.75,
+      "category": "viable",
+      "confidence": 0.85,
+      "title": "AI Code Generation Slows Down Coding but Improves Quality",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "deepseek-r1:14b",
+      "article_id": "test_2",
+      "article_title": "Fully in-browser container builds",
+      "status": "ok",
+      "time_seconds": 31.5,
+      "category": "viable",
+      "confidence": 0.85,
+      "title": "Ochagavia: Docker Builds in Browser via WebAssembly",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "deepseek-r1:14b",
+      "article_id": "test_3",
+      "article_title": "Norway's Huawei flash storage for LLM training",
+      "status": "ok",
+      "time_seconds": 22.66,
+      "category": "viable",
+      "confidence": 0.85,
+      "title": "Norway Deploys Huawei Storage for LLM Training",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "qwen3:latest",
+      "article_id": "test_1",
+      "article_title": "Using AI to write better code more slowly",
+      "status": "ok",
+      "time_seconds": 24.26,
+      "category": "viable",
+      "confidence": 0.85,
+      "title": "AI Code Productivity Paradox",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "qwen3:latest",
+      "article_id": "test_2",
+      "article_title": "Fully in-browser container builds",
+      "status": "ok",
+      "time_seconds": 27.6,
+      "category": "watch",
+      "confidence": 0.85,
+      "title": "Ochagavia Browser-Based Container Builds via WebAssembly",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "qwen3:latest",
+      "article_id": "test_3",
+      "article_title": "Norway's Huawei flash storage for LLM training",
+      "status": "ok",
+      "time_seconds": 11.85,
+      "category": "viable",
+      "confidence": 0.85,
+      "title": "Norway Uses Huawei Storage for LLM Training",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "deepseek-r1:8b",
+      "article_id": "test_1",
+      "article_title": "Using AI to write better code more slowly",
+      "status": "ok",
+      "time_seconds": 26.5,
+      "category": "work",
+      "confidence": 0.9,
+      "title": "AI Code Generation Slows Development, Improves Quality",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "deepseek-r1:8b",
+      "article_id": "test_2",
+      "article_title": "Fully in-browser container builds",
+      "status": "ok",
+      "time_seconds": 16.95,
+      "category": "work",
+      "confidence": 0.85,
+      "title": "Browser-based Docker builds using WebAssembly",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    },
+    {
+      "model": "deepseek-r1:8b",
+      "article_id": "test_3",
+      "article_title": "Norway's Huawei flash storage for LLM training",
+      "status": "ok",
+      "time_seconds": 11.48,
+      "category": "work",
+      "confidence": 0.9,
+      "title": "Huawei OceanStor Pacific Storage Deployment in Norway",
+      "quality_score": 100,
+      "issues": [],
+      "detail": {
+        "valid_json": true,
+        "missing_fields": [],
+        "valid_category": true,
+        "confidence_valid": true,
+        "tags_valid": true,
+        "steps_valid": true,
+        "title_valid": true,
+        "quality": 100
+      }
+    }
+  ]
+}

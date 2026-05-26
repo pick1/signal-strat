@@ -16,25 +16,31 @@ Usage:
     python scripts/rss_ingester.py list
 """
 
-import json
 import os
 import sys
 import time
 import argparse
+import json
 import hashlib
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
+
+# Add project root to path for signald package imports
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 import feedparser
 import requests
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
-PROJECT_DIR = Path(__file__).parent.parent.resolve()
+from signald.config import PROJECT_DIR, DB_PATH
+from signald.db import save_entry
+from signald.analyzer import analyze_content
+
 DATA_DIR = PROJECT_DIR / "data"
 FEEDS_CONFIG = DATA_DIR / "rss_feeds.json"
 SEEN_FILE = DATA_DIR / "rss_seen.json"
-DB_PATH = DATA_DIR / "signal.json"
 
 # Default feeds config template
 DEFAULT_FEEDS = {
@@ -177,14 +183,8 @@ def analyze_entry(
     tier_override: str = None,
 ) -> Optional[dict]:
     """Run through SIGNAL's analysis pipeline."""
-    sys.path.insert(0, str(PROJECT_DIR))
-    # Re-import to avoid cached imports if called from within app context
-    import importlib
-    import app as signal_app
-    importlib.reload(signal_app)
-
     try:
-        result = signal_app.analyze_content(content, source_hint, provider, tier_override)
+        result = analyze_content(content, source_hint, provider, tier_override)
         return result
     except Exception as e:
         print(f"    Analysis failed: {e}")
@@ -193,9 +193,6 @@ def analyze_entry(
 
 def save_to_db(entry: dict, analysis: dict, repo_data: list = None):
     """Save analyzed entry to SIGNAL TinyDB database."""
-    from tinydb import TinyDB
-    db = TinyDB(DB_PATH)
-
     db_entry = {
         "id": str(int(time.time() * 1000)),
         "created_at": datetime.now().isoformat(),
@@ -204,7 +201,7 @@ def save_to_db(entry: dict, analysis: dict, repo_data: list = None):
         "repos": repo_data or [],
         **analysis,
     }
-    db.insert(db_entry)
+    save_entry(db_entry)
     print(f"    Saved: {analysis.get('title', 'Untitled')}")
 
 
