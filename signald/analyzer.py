@@ -31,7 +31,7 @@ def set_notification_callback(callback):
     _notification_callback = callback
 
 
-def _notify(msg: str, icon: str = "!"):
+def _notify(msg: str, icon: str = "ℹ️"):
     if _notification_callback:
         _notification_callback(msg, icon)
 
@@ -161,7 +161,7 @@ def analyze_content(
         except Exception as e:
             if FALLBACK_ENABLED:
                 fallback_model = MODEL_TIERS["default"]["ollama"]
-                _notify(f"OpenAI failed ({model}), falling back to Ollama ({fallback_model})", "W")
+                _notify(f"OpenAI failed ({model}), falling back to Ollama ({fallback_model})", "⚠️")
                 return analyze_with_ollama(content, source_hint, fallback_model)
             raise
     else:
@@ -172,7 +172,7 @@ def analyze_content(
             if FALLBACK_ENABLED:
                 fallback_model = MODEL_TIERS["default"]["openai"]
                 if OPENAI_API_KEY:
-                    _notify(f"Ollama failed ({model}), falling back to OpenAI ({fallback_model})", "W")
+                    _notify(f"Ollama failed ({model}), falling back to OpenAI ({fallback_model})", "⚠️")
                     return analyze_with_openai(content, source_hint, fallback_model)
             raise
         return result

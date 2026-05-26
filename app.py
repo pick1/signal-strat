@@ -400,8 +400,8 @@ if analyze_btn and input_text.strip():
             }
             save_entry(entry)
             if fetch_notice:
-                st.toast(fetch_notice, icon="G")
-            st.toast("Entry added to feed", icon="A")
+                st.toast(fetch_notice, icon="✅")
+            st.toast("Entry added to feed", icon="📥")
             st.rerun()
         except Exception as e:
             st.error("Analysis failed: " + str(e))
