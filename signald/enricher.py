@@ -17,7 +17,16 @@ from signald.config import (
     OLLAMA_MODEL,
     ENRICHMENT_REQUESTS,
 )
-from signald.analyzer import analyze_with_ollama, parse_json_result
+from signald.analyzer import analyze_with_ollama, analyze_with_openai, parse_json_result
+
+
+def _call_llm(prompt: str, label: str, provider: str) -> dict | list:
+    """Dispatch enrichment LLM call to the right provider."""
+    if provider == "openai":
+        model = "deepseek-v4-flash-free"
+        return analyze_with_openai(prompt, label, model)
+    model = OLLAMA_MODEL
+    return analyze_with_ollama(prompt, label, model)
 
 
 # ─── Entity Extraction ──────────────────────────────────────────────────────
@@ -41,8 +50,8 @@ Example:
 Return ONLY valid JSON. No markdown fences."""
 
 
-def extract_entities(text: str, analysis: dict) -> list[dict]:
-    """Use the local LLM to extract entities from content + analysis."""
+def extract_entities(text: str, analysis: dict, provider: str = "ollama") -> list[dict]:
+    """Use the LLM to extract entities from content + analysis."""
     content_snippet = text[:2000] if text else ""
     analysis_snippet = json.dumps({
         "title": analysis.get("title"),
@@ -60,7 +69,7 @@ def extract_entities(text: str, analysis: dict) -> list[dict]:
     )
 
     try:
-        result = analyze_with_ollama(prompt, "entity extraction", OLLAMA_MODEL)
+        result = _call_llm(prompt, "entity extraction", provider)
         entities = result if isinstance(result, list) else result.get("entities", [])
         return entities[:10]  # Cap at 10
     except Exception as e:
@@ -239,8 +248,9 @@ def synthesize_enrichment(
     github_results: list[dict],
     link_results: list[dict],
     entities: list[dict],
+    provider: str = "ollama",
 ) -> dict:
-    """Use the local LLM to synthesize research findings into enrichment."""
+    """Use the LLM to synthesize research findings into enrichment."""
     context = {
         "original_analysis": {
             "title": analysis.get("title"),
@@ -275,7 +285,7 @@ def synthesize_enrichment(
     )
 
     try:
-        result = analyze_with_ollama(prompt, "enrichment synthesis", OLLAMA_MODEL)
+        result = _call_llm(prompt, "enrichment synthesis", provider)
         return result if isinstance(result, dict) else {"key_findings": [], "resources": []}
     except Exception as e:
         return {
@@ -289,7 +299,7 @@ def synthesize_enrichment(
 # ─── Main Pipeline ──────────────────────────────────────────────────────────
 
 
-def enrich(text: str, analysis: dict) -> dict:
+def enrich(text: str, analysis: dict, provider: str = "ollama") -> dict:
     """Run the full enrichment pipeline.
 
     Steps:
@@ -302,7 +312,7 @@ def enrich(text: str, analysis: dict) -> dict:
     start = time.time()
 
     # Step 1: Extract entities
-    entities = extract_entities(text, analysis)
+    entities = extract_entities(text, analysis, provider)
     entity_types = " | ".join(f"{e.get('name','?')}[{e.get('type','?')}]" for e in entities)
 
     # Step 2-3: GitHub search + READMEs
@@ -312,7 +322,7 @@ def enrich(text: str, analysis: dict) -> dict:
     link_results = find_and_fetch_links(text) if ENRICHMENT_REQUESTS.get("links") else []
 
     # Step 5: Synthesize
-    synthesized = synthesize_enrichment(analysis, github_results, link_results, entities)
+    synthesized = synthesize_enrichment(analysis, github_results, link_results, entities, provider)
 
     elapsed = time.time() - start
 

@@ -270,7 +270,7 @@ def signal_enrich_entry(entry_id: str) -> str:
     if not content:
         content = entry.get("summary", "") + "\n" + entry.get("verdict", "")
 
-    result = run_enrichment(content, entry)
+    result = run_enrichment(content, entry, "ollama")
     if result is None:
         return json.dumps({"error": "Enrichment failed or disabled"})
 

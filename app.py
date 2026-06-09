@@ -11,6 +11,7 @@ Run: streamlit run app.py
 import json
 import re
 import time
+import urllib.parse
 from datetime import datetime
 
 import streamlit as st
@@ -19,7 +20,6 @@ from signald.config import (
     PROJECT_DIR,
     CAT_COLORS,
     CAT_LABELS,
-    OPENAI_API_KEY,
 )
 from signald.db import get_db, load_entries, save_entry, delete_entry
 from signald.auth import is_password_set, verify_password, set_password
@@ -39,7 +39,7 @@ set_notification_callback(lambda msg, icon: st.toast(msg, icon=icon))
 # ─── PAGE SETUP ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="SIGNAL — Tech Intelligence",
-    page_icon="S",
+    page_icon="/home/dp/projects/signal/static/favicon.svg",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -56,8 +56,31 @@ html, body, [class*="css"] { font-family: 'DM Mono', monospace; }
 .section-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #404060; margin-bottom: 4px; }
 .section-text { font-size: 12px; color: #9090b0; line-height: 1.6; }
 .verdict-text { font-style: italic; font-size: 13px; color: #e8e8f0; line-height: 1.6; }
-</style>
-""", unsafe_allow_html=True)
+ </style>""", unsafe_allow_html=True)
+
+# ── Inject clipboard handler for copy buttons ────────────────────────────────
+st.components.v1.html(
+    """
+<script>
+parent.document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.sl-copy-btn');
+    if (!btn) return;
+    var data = btn.getAttribute('data-clipboard');
+    if (!data) return;
+    navigator.clipboard.writeText(decodeURIComponent(data)).then(function() {
+        btn.style.borderColor = '#00ff88';
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = '\U0001f4cb Copy'; btn.style.borderColor = '#353550'; }, 1500);
+    }).catch(function() {
+        btn.textContent = 'Clipboard blocked';
+        btn.style.borderColor = '#ff4466';
+        setTimeout(function() { btn.textContent = '\U0001f4cb Copy'; btn.style.borderColor = '#353550'; }, 2000);
+    });
+});
+</script>
+""",
+    height=0,
+)
 
 
 # ─── CARD RENDERER ────────────────────────────────────────────────────────────
@@ -76,10 +99,9 @@ def render_card(entry, color, label, conf, tags, date):
             href = f' href="{url}" target="_blank"' if url else ""
             repo_tags += '<a' + href + '><span class="tag" style="color:#44ff88;border-color:#44ff8833;background:rgba(68,255,136,0.05)">' + name + '</span></a>'
 
-    if entry.get("raw_url"):
-        src_tag = '<span class="tag" style="color:#7070a0;border-color:#353550">url</span>'
-    else:
-        src_tag = '<span class="tag" style="color:#7070a0;border-color:#353550">' + entry.get("source_type", "?") + '</span>'
+    src_type = entry.get("source_type", "?")
+    src_tag = '<span class="tag" style="color:#7070a0;border-color:#353550">' + src_type + '</span>'
+    raw_url = entry.get("raw_url")
 
     next_steps_html = ""
     for s in entry.get("next_steps", []):
@@ -93,6 +115,27 @@ def render_card(entry, color, label, conf, tags, date):
     impl         = entry.get("implementability", "")
     work_rel     = entry.get("work_relevance", "")
     title = entry.get("title", "Untitled")
+
+    # ── AI copy prompt ──────────────────────────────────────────────────────
+    next_steps_raw = entry.get("next_steps", [])
+    ai_prompt = (
+        f"{title}\n\n"
+        f"Summary: {summary}\n\n"
+        f"Verdict: {verdict}\n\n"
+        f"Category: {label}\n"
+        f"Tags: {', '.join(tags)}\n"
+        f"Implementability: {impl}\n"
+        f"Work Relevance: {work_rel}\n"
+        f"Next Steps: {', '.join(next_steps_raw) if next_steps_raw else 'none'}\n"
+        f"Source: {raw_url or src_type}"
+    )
+    encoded_prompt = urllib.parse.quote(ai_prompt)
+    copy_btn = (
+        f'<button class="sl-copy-btn" data-clipboard="{encoded_prompt}" '
+        f'style="background:none;border:1px solid #353550;color:#44aaff;border-radius:4px;'
+        f'padding:2px 8px;font-size:10px;cursor:pointer;margin-right:10px">'
+        f'\U0001f4cb Copy</button>'
+    )
 
     enrichment_data = entry.get("enrichment", {}) or {}
     enrichment_html = ""
@@ -203,8 +246,10 @@ def render_card(entry, color, label, conf, tags, date):
         '</div>'
         + enrichment_html +
         '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #252535;padding-top:8px">'
-          '<span style="color:#404060;font-size:11px">' + date + '</span>'
-          '<span style="color:#404060;font-size:11px">confidence ' + str(conf) + '%'
+          '<span style="color:#404060;font-size:11px">' + copy_btn + date + '</span>'
+          '<span style="font-size:11px">'
+            + (('<a href="' + raw_url + '" target="_blank" style="color:#44aaff;text-decoration:none;margin-right:10px">View source →</a>' if raw_url else '') or '<span style="color:#353550;font-size:10px;margin-right:10px">via ' + src_type + '</span>') +
+            'confidence ' + str(conf) + '%'
             '<span style="display:inline-block;width:60px;height:4px;background:#252535;border-radius:2px;vertical-align:middle;margin-left:6px">'
               '<span style="display:block;width:' + str(conf) + '%;height:100%;background:' + color + ';border-radius:2px"></span>'
             '</span>'
@@ -256,15 +301,13 @@ with st.sidebar:
     st.divider()
 
     st.markdown("**Provider**")
-    provider_options = ["Ollama (local)", "OpenAI API"]
-    if not OPENAI_API_KEY:
-        provider_options = ["Ollama (local)"]
+    provider_options = ["OpenCode Zen", "Ollama (local)"]
     provider_choice = st.selectbox(
         "Provider", provider_options,
-        index=0,
+        index=1,
         label_visibility="collapsed",
     )
-    provider = "openai" if "OpenAI" in provider_choice else "ollama"
+    provider = "openai" if "OpenCode" in provider_choice else "ollama"
 
     st.markdown("**Analysis Depth**")
     tier_options = ["Auto (per source type)", "Light", "Default", "Deep"]
@@ -321,6 +364,12 @@ with st.sidebar:
             md_lines += ["## " + label, ""]
             for e in group:
                 steps = "\n".join("- " + s for s in e.get("next_steps", []))
+                raw_exp_conf = e.get("confidence", 0.8)
+                if isinstance(raw_exp_conf, str):
+                    try:
+                        raw_exp_conf = float(raw_exp_conf)
+                    except ValueError:
+                        raw_exp_conf = 0.8
                 md_lines += [
                     "### " + e.get("title", "Untitled"),
                     "**Tags:** " + ", ".join(e.get("tags", [])) + " | **Date:** " + e.get("created_at", "")[:10],
@@ -330,7 +379,7 @@ with st.sidebar:
                     "**Verdict:** _" + e.get("verdict", "") + "_",
                     "**Next Steps:**\n" + steps,
                     "**OpenCode Fit:** " + e.get("opencode_fit", ""),
-                    "**Confidence:** " + str(round(e.get("confidence", 0.8) * 100)) + "%",
+                    "**Confidence:** " + str(round(raw_exp_conf * 100)) + "%",
                     "", "---", ""
                 ]
         st.download_button("Export Markdown", "\n".join(md_lines),
@@ -387,7 +436,7 @@ if analyze_btn and input_text.strip():
     with st.spinner(f"Analyzing via {provider}..."):
         try:
             result = analyze_content(content, detected, provider, tier_override)
-            enrichment = run_enrichment(content, result) if run_enrich else None
+            enrichment = run_enrichment(content, result, provider) if run_enrich else None
             entry = {
                 "id": str(int(time.time() * 1000)),
                 "created_at": datetime.now().isoformat(),
@@ -424,17 +473,24 @@ if search_query:
                any(q in t.lower() for t in e.get("tags", []))]
 
 all_entries = load_entries()
-c1, c2, c3, c4, c5 = st.columns(5)
-with c1:
+
+from signald.config import CAT_LABELS
+
+# Build dynamic metric columns for all categories that have actual entries
+cat_counts = {}
+for e in all_entries:
+    cat = e.get("category", "none") or "none"
+    cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+# Build column list: Total + every category with entries (in defined order)
+metric_categories = [c for c in CAT_LABELS if cat_counts.get(c, 0) > 0]
+num_cols = 1 + len(metric_categories)
+cols = st.columns(num_cols)
+with cols[0]:
     st.metric("Total", len(all_entries))
-with c2:
-    st.metric("Viable", sum(1 for e in all_entries if e.get("category") == "viable"))
-with c3:
-    st.metric("Work", sum(1 for e in all_entries if e.get("category") == "work"))
-with c4:
-    st.metric("Vaporware", sum(1 for e in all_entries if e.get("category") == "vaporware"))
-with c5:
-    st.metric("Watch", sum(1 for e in all_entries if e.get("category") == "watch"))
+for i, cat in enumerate(metric_categories):
+    with cols[i + 1]:
+        st.metric(CAT_LABELS[cat], cat_counts.get(cat, 0))
 
 st.divider()
 
@@ -450,15 +506,18 @@ with feed_col:
             cat    = entry.get("category", "watch")
             color  = CAT_COLORS.get(cat, "#888")
             label  = CAT_LABELS.get(cat, cat)
-            conf   = round(entry.get("confidence", 0.8) * 100)
+            raw_conf = entry.get("confidence", 0.8)
+            if isinstance(raw_conf, str):
+                try:
+                    raw_conf = float(raw_conf)
+                except ValueError:
+                    raw_conf = 0.8
+            conf = round(raw_conf * 100)
             tags   = entry.get("tags", [])
             date   = entry.get("created_at", "")[:10]
             doc_id = entry.doc_id
 
             st.markdown(render_card(entry, color, label, conf, tags, date), unsafe_allow_html=True)
-
-            if entry.get("raw_url"):
-                st.markdown("[View source](" + entry["raw_url"] + ")")
 
             if st.button("Delete", key="del_" + str(doc_id), help="Remove this entry"):
                 delete_entry(doc_id)

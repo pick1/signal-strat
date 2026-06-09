@@ -88,9 +88,10 @@ def analyze_with_openai(content: str, source_hint: str, model: str) -> dict:
     """Analyze content using an OpenAI-compatible API."""
     system_prompt, user_prompt = build_prompt(content, source_hint)
     headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
     }
+    if OPENAI_API_KEY:
+        headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
     payload = {
         "model": model,
         "messages": [
@@ -154,8 +155,6 @@ def analyze_content(
     model = pick_model(source_hint, provider, tier_override)
 
     if provider == "openai":
-        if not OPENAI_API_KEY:
-            raise ValueError("OpenAI API key not set (SIGNAL_OPENAI_API_KEY env var)")
         try:
             return analyze_with_openai(content, source_hint, model)
         except Exception as e:
@@ -181,8 +180,13 @@ def analyze_content(
 # ─── Enrichment Integration ──────────────────────────────────────────────────
 
 
-def run_enrichment(content: str, analysis: dict) -> dict | None:
+def run_enrichment(content: str, analysis: dict, provider: str = "ollama") -> dict | None:
     """Post-analysis enrichment: extract entities, search for resources.
+
+    Args:
+        content: Original text content.
+        analysis: Analysis result dict.
+        provider: The LLM provider to use ('ollama' or 'openai').
 
     Returns enrichment dict or None if enrichment is disabled or fails.
     """
@@ -190,7 +194,7 @@ def run_enrichment(content: str, analysis: dict) -> dict | None:
         return None
     try:
         from signald.enricher import enrich
-        return enrich(content, analysis)
+        return enrich(content, analysis, provider)
     except Exception as e:
-        _notify(f"Enrichment failed: {e}", "W")
+        _notify(f"Enrichment failed: {e}", "⚠️")
         return None
