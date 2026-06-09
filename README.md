@@ -1,5 +1,14 @@
 # SIGNAL — Tech Intelligence Digest
 
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.40-FF4B4B?logo=streamlit&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-local-000?logo=ollama&logoColor=white)
+![Whisper](https://img.shields.io/badge/Whisper-transcription-00E676?logo=openai&logoColor=white)
+![OpenCode Zen](https://img.shields.io/badge/OpenCode_Zen-remote-00BFA5)
+![TinyDB](https://img.shields.io/badge/TinyDB-database-FFA000)
+![MCP](https://img.shields.io/badge/MCP-server-7B68EE)
+![License](https://img.shields.io/badge/license-MIT-808080)
+
 A personal tech intelligence dashboard. Paste articles, URLs, Instagram posts, tweets, or notes — SIGNAL fetches the content, analyzes it via LLM, and produces structured intelligence reports with categories, verdicts, and actionable next steps.
 
 Built with Streamlit, Ollama, and friends.
