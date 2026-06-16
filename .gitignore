@@ -1,19 +1,27 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
+# ─── TRADING SIGNALS — .gitignore ─────────────────────────────────────────────
+
+# Virtual environment
 venv/
-.env
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
 *.egg-info/
 dist/
 build/
 
+# Data files
+data/*.json
+!data/.gitkeep
+
 # Streamlit
 .streamlit/secrets.toml
 
-# OS
-.DS_Store
-Thumbs.db
+# Environment
+.env
+.envrc
 
 # IDE
 .vscode/
@@ -21,9 +29,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# Data
-data/signal.json
-data/.password_hash
-
-# Logs
-*.log
+# OS
+.DS_Store
+Thumbs.db

@@ -1,68 +1,59 @@
 #!/usr/bin/env python3
 """
-SIGNAL — MCP Server
-====================
-Exposes the SIGNAL Tech Intelligence database as MCP tools/resources.
-
-This lets any MCP client (Hermes Agent, OpenCode, Claude Code, etc.)
-query the intelligence feed, search entries, get stats, and trigger
-analysis — all via MCP tool calls.
+TRADING SIGNALS — MCP Server
+============================
+Exposes the Trading Signals database as MCP tools/resources for external
+AI agents (Hermes Agent, OpenCode, Claude Code, etc.).
 
 Usage:
-    # Run with stdio transport (for MCP client integration)
-    python mcp_server.py
-
-    # Run with SSE transport (for HTTP/StreamableHTTP clients)
-    python mcp_server.py --transport sse --port 8765
+    python mcp_server.py                    # stdio transport
+    python mcp_server.py --transport sse --port 8765  # HTTP/SSE
 """
 
 import json
-import os
 import sys
 import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
-from tinydb import TinyDB, Query
 from mcp.server.fastmcp import FastMCP
 
-from signald.db import load_entries, search_entries, get_stats, get_db
-from signald.analyzer import analyze_content, run_enrichment, parse_json_result
-from signald.config import MODEL_TIERS, SOURCE_TIER, CAT_LABELS, CAT_COLORS
+from trading_signals.db import load_entries, search_entries, get_db
+from trading_signals.analyzer import analyze_content
+from trading_signals.strategy_engine import (
+    create_strategies,
+    load_strategies,
+    get_strategy_stats,
+)
+from trading_signals.portfolio import build_portfolio_context
+from trading_signals.config import CAT_LABELS, CAT_COLORS
 
 PROJECT_DIR = Path(__file__).parent.resolve()
-DB_PATH = PROJECT_DIR / "data" / "signal.json"
+DB_PATH = PROJECT_DIR / "data" / "trading_signals.json"
 
 # ─── Server Setup ────────────────────────────────────────────────────────────
-mcp = FastMCP("SIGNAL — Tech Intelligence Digest")
-
-
-# ─── DB Helpers ──────────────────────────────────────────────────────────────
-def _get_db() -> TinyDB:
-    """Get a TinyDB instance (thread-safe reads)."""
-    return TinyDB(DB_PATH)
+mcp = FastMCP("TRADING SIGNALS — Financial Intelligence & Strategy")
 
 
 # ─── Tools ───────────────────────────────────────────────────────────────────
 
 
 @mcp.tool()
-def signal_list_entries(
+def ts_list_entries(
     category: str = None,
     limit: int = 50,
     offset: int = 0,
 ) -> str:
-    """List analyzed intelligence entries with optional category filter.
+    """List financial analysis entries with optional category filter.
 
     Args:
-        category: Optional filter — 'viable', 'work', 'vaporware', 'redundant', 'watch', 'mixed'
+        category: Optional filter — 'bullish', 'bearish', 'neutral', 'catalyst', 'swing', 'macro', 'earnings'
         limit: Max entries to return (default 50)
         offset: Pagination offset
     """
-    db = _get_db()
+    from tinydb import TinyDB
+    db = TinyDB(DB_PATH)
     entries = db.all()
-    # Sort newest first
     entries.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
     if category:
@@ -73,33 +64,33 @@ def signal_list_entries(
 
     summarized = []
     for e in entries:
-        summarized.append(
-            {
-                "id": e.get("id"),
-                "title": e.get("title", "Untitled"),
-                "category": e.get("category", "unknown"),
-                "source_type": e.get("source_type", "unknown"),
-                "confidence": e.get("confidence", 0),
-                "tags": e.get("tags", []),
-                "date": e.get("created_at", "")[:10],
-                "verdict": e.get("verdict", ""),
-                "summary": e.get("summary", ""),
-            }
-        )
+        summarized.append({
+            "id": e.get("id"),
+            "title": e.get("title", "Untitled"),
+            "category": e.get("category", "unknown"),
+            "tickers": e.get("tickers", []),
+            "confidence": e.get("confidence", 0),
+            "tags": e.get("tags", []),
+            "date": e.get("created_at", "")[:10],
+            "verdict": e.get("verdict", ""),
+            "summary": e.get("summary", ""),
+            "market_impact": e.get("market_impact", ""),
+            "catalyst_date": e.get("catalyst_date", ""),
+        })
 
-    result = {"total": total, "returned": len(summarized), "entries": summarized}
-    return json.dumps(result, indent=2)
+    return json.dumps({"total": total, "returned": len(summarized), "entries": summarized}, indent=2)
 
 
 @mcp.tool()
-def signal_search_entries(query: str, limit: int = 20) -> str:
-    """Search entries by keyword across title, summary, verdict, and tags.
+def ts_search_entries(query: str, limit: int = 20) -> str:
+    """Search entries by keyword across title, summary, verdict, tags, and tickers.
 
     Args:
-        query: Search keyword (case-insensitive)
+        query: Search keyword or ticker (case-insensitive)
         limit: Max results to return
     """
-    db = _get_db()
+    from tinydb import TinyDB
+    db = TinyDB(DB_PATH)
     q = query.lower()
     entries = db.all()
     entries.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -111,34 +102,31 @@ def signal_search_entries(query: str, limit: int = 20) -> str:
             or q in e.get("summary", "").lower()
             or q in e.get("verdict", "").lower()
             or any(q in t.lower() for t in e.get("tags", []))
-            or q in e.get("implementability", "").lower()
-            or q in e.get("work_relevance", "").lower()
-            or q in e.get("opencode_fit", "").lower()
+            or any(q in t.lower() for t in e.get("tickers", []))
+            or q in e.get("market_impact", "").lower()
         ):
-            matches.append(
-                {
-                    "id": e.get("id"),
-                    "title": e.get("title", "Untitled"),
-                    "category": e.get("category", "unknown"),
-                    "tags": e.get("tags", []),
-                    "date": e.get("created_at", "")[:10],
-                    "verdict": e.get("verdict", ""),
-                }
-            )
+            matches.append({
+                "id": e.get("id"),
+                "title": e.get("title", "Untitled"),
+                "category": e.get("category", "unknown"),
+                "tickers": e.get("tickers", []),
+                "tags": e.get("tags", []),
+                "date": e.get("created_at", "")[:10],
+                "verdict": e.get("verdict", ""),
+            })
 
-    matches = matches[:limit]
-    result = {"query": query, "total_matches": len(matches), "entries": matches}
-    return json.dumps(result, indent=2)
+    return json.dumps({"query": query, "total_matches": len(matches), "entries": matches[:limit]}, indent=2)
 
 
 @mcp.tool()
-def signal_get_entry(entry_id: str) -> str:
+def ts_get_entry(entry_id: str) -> str:
     """Get a full entry by its unique ID.
 
     Args:
         entry_id: The entry's string ID (e.g. '1779601758639')
     """
-    db = _get_db()
+    from tinydb import TinyDB, Query
+    db = TinyDB(DB_PATH)
     Entry = Query()
     entry = db.get(Entry.id == entry_id)
     if not entry:
@@ -147,43 +135,41 @@ def signal_get_entry(entry_id: str) -> str:
 
 
 @mcp.tool()
-def signal_get_stats() -> str:
-    """Get summary statistics about the intelligence feed."""
-    db = _get_db()
+def ts_get_stats() -> str:
+    """Get summary statistics about the financial intelligence feed."""
+    from tinydb import TinyDB
+    db = TinyDB(DB_PATH)
     entries = db.all()
 
     categories = {}
-    source_types = {}
+    all_tickers = {}
     all_tags = []
 
     for e in entries:
         cat = e.get("category", "unknown")
         categories[cat] = categories.get(cat, 0) + 1
 
-        src = e.get("source_type", "unknown")
-        source_types[src] = source_types.get(src, 0) + 1
+        for t in e.get("tickers", []):
+            all_tickers[t] = all_tickers.get(t, 0) + 1
 
         all_tags.extend(e.get("tags", []))
 
-    # Tag frequency
     tag_freq = {}
     for t in all_tags:
         tag_freq[t] = tag_freq.get(t, 0) + 1
     top_tags = sorted(tag_freq.items(), key=lambda x: -x[1])[:20]
+    top_tickers = sorted(all_tickers.items(), key=lambda x: -x[1])[:10]
 
-    # Recent activity (entries in last 7 days)
     week_ago = datetime.now().timestamp() - 7 * 86400
     recent = sum(
-        1
-        for e in entries
-        if datetime.fromisoformat(e.get("created_at", "2000-01-01")).timestamp()
-        > week_ago
+        1 for e in entries
+        if datetime.fromisoformat(e.get("created_at", "2000-01-01")).timestamp() > week_ago
     )
 
     result = {
         "total_entries": len(entries),
         "by_category": categories,
-        "by_source_type": source_types,
+        "top_tickers": [{"ticker": t, "count": c} for t, c in top_tickers],
         "top_tags": [{"tag": t, "count": c} for t, c in top_tags],
         "entries_this_week": recent,
     }
@@ -191,116 +177,121 @@ def signal_get_stats() -> str:
 
 
 @mcp.tool()
-def signal_export(format: str = "json") -> str:
-    """Export all entries as JSON or Markdown.
+def ts_list_strategies(status: str = None, ticker: str = None) -> str:
+    """List trading strategies with optional filters.
 
     Args:
-        format: 'json' or 'markdown'
+        status: Filter by status — 'active', 'entered', 'closed_win', 'closed_loss', 'expired', 'cancelled'
+        ticker: Filter by ticker symbol (e.g. 'AAPL')
     """
-    db = _get_db()
-    entries = db.all()
-    entries.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    strats = load_strategies()
+    if status:
+        strats = [s for s in strats if s.get("status") == status]
+    if ticker:
+        ticker = ticker.upper()
+        strats = [s for s in strats if s.get("ticker", "").upper() == ticker]
 
-    if format == "json":
-        return json.dumps(entries, indent=2, default=str)
-
-    # Markdown export
-    cat_labels = {
-        "viable": "Viable",
-        "work": "Work",
-        "vaporware": "Vaporware",
-        "redundant": "Redundant",
-        "watch": "Watch",
-        "mixed": "Mixed",
-    }
-
-    lines = [
-        "# SIGNAL — Tech Intelligence Digest",
-        f"_Exported {datetime.now().strftime('%Y-%m-%d')}_",
-        "",
-    ]
-
-    for cat, label in sorted(cat_labels.items()):
-        group = [e for e in entries if e.get("category") == cat]
-        if not group:
-            continue
-        lines.append(f"## {label}")
-        lines.append("")
-        for e in group:
-            steps = "\n".join(f"- {s}" for s in e.get("next_steps", []))
-            lines.extend(
-                [
-                    f"### {e.get('title', 'Untitled')}",
-                    f"**Tags:** {', '.join(e.get('tags', []))} | **Date:** {str(e.get('created_at', ''))[:10]}",
-                    "",
-                    e.get("summary", ""),
-                    "",
-                    f"**Implementability:** {e.get('implementability', '')}",
-                    f"**Work Relevance:** {e.get('work_relevance', '')}",
-                    f"**Verdict:** _{e.get('verdict', '')}_",
-                    f"**Next Steps:**",
-                    steps,
-                    f"**OpenCode Fit:** {e.get('opencode_fit', '')}",
-                    f"**Confidence:** {round(e.get('confidence', 0.8) * 100)}%",
-                    "",
-                    "---",
-                    "",
-                ]
-            )
-
-    return "\n".join(lines)
+    return json.dumps({
+        "total": len(strats),
+        "strategies": [
+            {
+                "id": s.get("id"),
+                "ticker": s.get("ticker"),
+                "strategy_type": s.get("strategy_type"),
+                "direction": s.get("direction"),
+                "status": s.get("status"),
+                "confidence": s.get("confidence"),
+                "risk_level": s.get("risk_level"),
+                "entry_conditions": s.get("entry_conditions"),
+                "suggested_entry": s.get("suggested_entry"),
+                "stop_loss": s.get("stop_loss"),
+                "take_profit": s.get("take_profit"),
+                "time_horizon": s.get("time_horizon"),
+                "rationale": s.get("rationale"),
+                "pnl_pct": s.get("pnl_pct"),
+                "created_at": s.get("created_at"),
+            }
+            for s in strats
+        ]
+    }, indent=2)
 
 
 @mcp.tool()
-def signal_enrich_entry(entry_id: str) -> str:
-    """Run enrichment on an existing entry: extract entities, search GitHub,
-    find related repos and resources, and synthesize research findings.
+def ts_get_strategy_stats() -> str:
+    """Get aggregate statistics about trading strategy performance."""
+    stats = get_strategy_stats()
+    return json.dumps(stats, indent=2)
+
+
+@mcp.tool()
+def ts_analyze_and_generate(content: str, provider: str = "ollama") -> str:
+    """Analyze financial content and generate trading strategies in one call.
 
     Args:
-        entry_id: The entry's string ID (e.g. '1779601758639')
+        content: Financial article text, URL, or news snippet
+        provider: 'ollama' or 'openai' (default: ollama)
     """
-    db = _get_db()
-    Entry = Query()
-    entry = db.get(Entry.id == entry_id)
-    if not entry:
-        return json.dumps({"error": f"Entry '{entry_id}' not found"})
+    from trading_signals.scrapers import fetch_url_content, extract_tickers
 
-    # Get the raw content — stored content or summary
-    content = entry.get("_raw_content", "")
-    if not content:
-        content = entry.get("summary", "") + "\n" + entry.get("verdict", "")
+    # Fetch if URL
+    if content.startswith("http://") or content.startswith("https://"):
+        fetched = fetch_url_content(content)
+        content = fetched
 
-    result = run_enrichment(content, entry, "ollama")
-    if result is None:
-        return json.dumps({"error": "Enrichment failed or disabled"})
+    # Analyze
+    result = analyze_content(content, "url", provider)
 
-    # Save enrichment to the entry in DB
-    entry["enrichment"] = result
-    db.update(entry, Entry.id == entry_id)
+    # Extract tickers if missing
+    if not result.get("tickers"):
+        result["tickers"] = extract_tickers(content)[:5]
 
-    return json.dumps(result, indent=2, default=str)
+    # Save entry
+    from trading_signals.db import save_entry
+    entry = {
+        "id": str(int(datetime.now().timestamp() * 1000)),
+        "created_at": datetime.now().isoformat(),
+        "source_type": "url" if content.startswith(("http://", "https://")) else "article",
+        **result,
+    }
+    save_entry(entry)
+
+    # Generate strategies
+    portfolio_context = build_portfolio_context()
+    strategies = create_strategies(entry, portfolio_context, provider)
+
+    return json.dumps({
+        "analysis": result,
+        "strategies_generated": len(strategies),
+        "strategies": strategies,
+    }, indent=2, default=str)
 
 
 # ─── Resources ───────────────────────────────────────────────────────────────
 
 
-@mcp.resource("signal://entries")
+@mcp.resource("trading-signals://entries")
 def get_all_entries() -> str:
     """All entries as a resource."""
-    return signal_list_entries(limit=200)
+    return ts_list_entries(limit=200)
 
 
-@mcp.resource("signal://stats")
+@mcp.resource("trading-signals://stats")
 def get_statistics() -> str:
     """Feed statistics as a resource."""
-    return signal_get_stats()
+    return ts_get_stats()
+
+
+@mcp.resource("trading-signals://strategies")
+def get_all_strategies() -> str:
+    """All strategies as a resource."""
+    return ts_list_strategies()
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SIGNAL MCP Server")
+    parser = argparse.ArgumentParser(description="TRADING SIGNALS MCP Server")
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse"],
@@ -308,26 +299,19 @@ def main():
         help="Transport protocol (default: stdio for MCP client integration)",
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=8765,
+        "--port", type=int, default=8765,
         help="Port for SSE transport (default: 8765)",
     )
     parser.add_argument(
-        "--host",
-        default="127.0.0.1",
+        "--host", default="127.0.0.1",
         help="Host for SSE transport (default: 127.0.0.1)",
     )
     args = parser.parse_args()
 
     if args.transport == "sse":
-        print(
-            f"Starting SIGNAL MCP server on {args.host}:{args.port} (SSE)",
-            file=sys.stderr,
-        )
+        print(f"Starting TRADING SIGNALS MCP server on {args.host}:{args.port} (SSE)", file=sys.stderr)
         mcp.run(transport="sse", host=args.host, port=args.port)
     else:
-        # Stdio transport — used by Hermes/OpenCode MCP client integration
         mcp.run(transport="stdio")
 
 

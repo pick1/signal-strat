@@ -1,0 +1,15 @@
+[Unit]
+Description=TRADING SIGNALS — Financial Intelligence & Strategy Dashboard
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=dp
+WorkingDirectory=/home/dp/projects/trading-signals
+Environment=PATH=/home/dp/projects/trading-signals/venv/bin:/usr/local/bin:/usr/bin
+ExecStart=/home/dp/projects/trading-signals/venv/bin/streamlit run app.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-SIGNAL — Tech Intelligence Digest
-==================================
-A personal tech intelligence dashboard. Paste URLs, articles, Instagram posts,
-or notes — SIGNAL fetches, analyzes, and produces structured reports.
+TRADING SIGNALS — Financial Intelligence & Strategy Dashboard
+==============================================================
+Analyses financial news/articles and generates actionable trading strategies.
 
 Run: streamlit run app.py
 """
@@ -16,20 +15,42 @@ from datetime import datetime
 
 import streamlit as st
 
-from signald.config import (
+from trading_signals.config import (
     PROJECT_DIR,
     CAT_COLORS,
     CAT_LABELS,
+    CAT_DESCRIPTIONS,
 )
-from signald.db import get_db, load_entries, save_entry, delete_entry
-from signald.auth import is_password_set, verify_password, set_password
-from signald.scrapers import (
+from trading_signals.db import get_db, load_entries, save_entry, delete_entry
+from trading_signals.auth import is_password_set, verify_password, set_password
+from trading_signals.scrapers import (
     detect_input_type,
     fetch_url_content,
-    fetch_instagram_content,
-    enrich_with_repos,
+    extract_tickers,
+    is_financial_url,
 )
-from signald.analyzer import analyze_content, run_enrichment, set_notification_callback
+from trading_signals.analyzer import analyze_content, set_notification_callback
+from trading_signals.strategy_engine import (
+    create_strategies,
+    load_strategies,
+    update_strategy_status,
+    delete_strategy,
+    get_strategy_stats,
+    format_strategy_for_display,
+)
+from trading_signals.portfolio import (
+    set_holdings,
+    get_holdings,
+    add_holding,
+    remove_holding,
+    set_watchlist,
+    get_watchlist,
+    add_to_watchlist,
+    remove_from_watchlist,
+    set_risk_profile,
+    get_risk_profile,
+    build_portfolio_context,
+)
 
 
 # ─── Wire notifications ──────────────────────────────────────────────────────
@@ -38,8 +59,8 @@ set_notification_callback(lambda msg, icon: st.toast(msg, icon=icon))
 
 # ─── PAGE SETUP ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="SIGNAL — Tech Intelligence",
-    page_icon="/home/dp/projects/signal/static/favicon.svg",
+    page_title="TRADING SIGNALS — Financial Intelligence",
+    page_icon="/📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -56,214 +77,20 @@ html, body, [class*="css"] { font-family: 'DM Mono', monospace; }
 .section-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #404060; margin-bottom: 4px; }
 .section-text { font-size: 12px; color: #9090b0; line-height: 1.6; }
 .verdict-text { font-style: italic; font-size: 13px; color: #e8e8f0; line-height: 1.6; }
- </style>""", unsafe_allow_html=True)
-
-# ── Inject clipboard handler for copy buttons ────────────────────────────────
-st.components.v1.html(
-    """
-<script>
-parent.document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.sl-copy-btn');
-    if (!btn) return;
-    var data = btn.getAttribute('data-clipboard');
-    if (!data) return;
-    navigator.clipboard.writeText(decodeURIComponent(data)).then(function() {
-        btn.style.borderColor = '#00ff88';
-        btn.textContent = 'Copied!';
-        setTimeout(function() { btn.textContent = '\U0001f4cb Copy'; btn.style.borderColor = '#353550'; }, 1500);
-    }).catch(function() {
-        btn.textContent = 'Clipboard blocked';
-        btn.style.borderColor = '#ff4466';
-        setTimeout(function() { btn.textContent = '\U0001f4cb Copy'; btn.style.borderColor = '#353550'; }, 2000);
-    });
-});
-</script>
-""",
-    height=0,
-)
-
-
-# ─── CARD RENDERER ────────────────────────────────────────────────────────────
-def render_card(entry, color, label, conf, tags, date):
-    cat_tag = '<span class="tag" style="color:' + color + ';border-color:' + color + ';background:rgba(0,0,0,0.3)">' + label + '</span>'
-
-    topic_tags = ""
-    for t in tags:
-        topic_tags += '<span class="tag" style="color:#7070a0;border-color:#353550">' + t + '</span>'
-
-    repo_tags = ""
-    for r in entry.get("repos", []):
-        name = r.get("full_name", "")
-        url = r.get("url", "")
-        if name:
-            href = f' href="{url}" target="_blank"' if url else ""
-            repo_tags += '<a' + href + '><span class="tag" style="color:#44ff88;border-color:#44ff8833;background:rgba(68,255,136,0.05)">' + name + '</span></a>'
-
-    src_type = entry.get("source_type", "?")
-    src_tag = '<span class="tag" style="color:#7070a0;border-color:#353550">' + src_type + '</span>'
-    raw_url = entry.get("raw_url")
-
-    next_steps_html = ""
-    for s in entry.get("next_steps", []):
-        next_steps_html += "▸ " + str(s) + "<br>"
-    if not next_steps_html:
-        next_steps_html = "none"
-
-    opencode_fit = entry.get("opencode_fit", "not analyzed")
-    verdict      = entry.get("verdict", "")
-    summary      = entry.get("summary", "")
-    impl         = entry.get("implementability", "")
-    work_rel     = entry.get("work_relevance", "")
-    title = entry.get("title", "Untitled")
-
-    # ── AI copy prompt ──────────────────────────────────────────────────────
-    next_steps_raw = entry.get("next_steps", [])
-    ai_prompt = (
-        f"{title}\n\n"
-        f"Summary: {summary}\n\n"
-        f"Verdict: {verdict}\n\n"
-        f"Category: {label}\n"
-        f"Tags: {', '.join(tags)}\n"
-        f"Implementability: {impl}\n"
-        f"Work Relevance: {work_rel}\n"
-        f"Next Steps: {', '.join(next_steps_raw) if next_steps_raw else 'none'}\n"
-        f"Source: {raw_url or src_type}"
-    )
-    encoded_prompt = urllib.parse.quote(ai_prompt)
-    copy_btn = (
-        f'<button class="sl-copy-btn" data-clipboard="{encoded_prompt}" '
-        f'style="background:none;border:1px solid #353550;color:#44aaff;border-radius:4px;'
-        f'padding:2px 8px;font-size:10px;cursor:pointer;margin-right:10px">'
-        f'\U0001f4cb Copy</button>'
-    )
-
-    enrichment_data = entry.get("enrichment", {}) or {}
-    enrichment_html = ""
-    if enrichment_data and enrichment_data.get("github_results"):
-        gh = enrichment_data["github_results"]
-        findings = enrichment_data.get("key_findings", [])
-        resources = enrichment_data.get("resources", [])
-        enrich_time = enrichment_data.get("enrichment_time", 0)
-
-        lines = ['<div style="margin-top:12px;background:#0f0f18;border:1px solid #33cc6633;border-radius:8px;padding:12px 14px">'
-                 '<div class="section-label" style="color:#33cc66">\U0001f50d Enrichment</div>']
-
-        # GitHub repos
-        repo_items = []
-        for r in gh[:4]:
-            if "name" not in r:
-                continue
-            stars = r.get("stars", 0)
-            desc = (r.get("description", "") or "")[:120]
-            lang = r.get("language", "")
-            lang_tag = f'<span style="color:#7070a0;font-size:10px;margin-left:4px">{lang}</span>' if lang else ""
-            star_str = f'\U00002b50 {stars}' if stars else ""
-            repo_items.append(
-                f'<div style="margin:4px 0;font-size:12px">'
-                f'<a href="{r["url"]}" target="_blank" style="color:#44aaff;text-decoration:none">{r["name"]}</a>'
-                f'<span style="color:#808090"> {star_str}{lang_tag}</span><br>'
-                f'<span style="color:#606080;font-size:11px">{desc}</span>'
-                f'</div>'
-            )
-        if repo_items:
-            lines.append('<div style="margin-top:8px"><span style="color:#33cc66;font-size:11px;font-weight:600">\U0001f4c1 GitHub Repos</span></div>')
-            lines.extend(repo_items)
-
-        # Key findings
-        if findings:
-            lines.append('<div style="margin-top:8px"><span style="color:#33cc66;font-size:11px;font-weight:600">\U0001f4dd Findings</span></div>')
-            for f in findings[:3]:
-                lines.append(f'<div style="color:#a0a0c0;font-size:11px;margin:3px 0">\u25b8 {f}</div>')
-
-        # Resources
-        if resources:
-            lines.append('<div style="margin-top:8px"><span style="color:#33cc66;font-size:11px;font-weight:600">\U0001f517 Resources</span></div>')
-            for r in resources[:3]:
-                name = r.get("name", r.get("url", ""))
-                url = r.get("url", "")
-                desc = (r.get("description", "") or "")[:100]
-                lines.append(
-                    f'<div style="margin:3px 0;font-size:11px">'
-                    f'<a href="{url}" target="_blank" style="color:#44aaff">{name}</a>'
-                    f'<span style="color:#606080"> — {desc}</span></div>'
-                )
-
-        lines.append(f'<div style="color:#404060;font-size:10px;margin-top:6px">enriched in {enrich_time}s</div>')
-        lines.append('</div>')
-        enrichment_html = "".join(lines)
-
-    instagram_html = ""
-    meta = entry.get("instagram_meta")
-    if meta:
-        author = meta.get("author", "")
-        likes = meta.get("likes", 0)
-        caption = (meta.get("caption", "") or "")[:80]
-        is_video = meta.get("is_video", False)
-        has_transcript = bool(meta.get("transcript")) and not meta["transcript"].startswith("[transcription error")
-        bits = []
-        if author:
-            bits.append(f"@{author}")
-        if is_video:
-            bits.append('<span class="tag" style="color:#ff4466;border-color:#ff446633;background:rgba(255,68,102,0.1)">REEL</span>')
-        if likes:
-            bits.append(f"likes: {likes}")
-        if caption:
-            bits.append(f'<span style="color:#606090">"{caption}{"..." if len((meta.get("caption") or "")) > 80 else ""}"</span>')
-        if has_transcript:
-            bits.append('<span class="tag" style="color:#44aaff;border-color:#44aaff33;background:rgba(68,170,255,0.1)">TRANSCRIPT</span>')
-        if bits:
-            instagram_html = '<div style="margin-bottom:10px;font-size:11px;color:#8080b0">' + " · ".join(bits) + '</div>'
-
-    return (
-        '<div class="card" style="border-left-color:' + color + '">'
-        '<div class="card-title">' + title + '</div>'
-        '<div style="margin-bottom:10px">' + cat_tag + src_tag + repo_tags + topic_tags + '</div>'
-        + instagram_html +
-        '<div class="section-text" style="margin-bottom:12px">' + summary + '</div>'
-        '<div style="display:flex;gap:16px;margin-bottom:12px">'
-          '<div style="flex:1;background:#0a0a0f;border:1px solid #252535;border-radius:8px;padding:10px 12px">'
-            '<div class="section-label">Implementability</div>'
-            '<div class="section-text">' + impl + '</div>'
-          '</div>'
-          '<div style="flex:1;background:#0a0a0f;border:1px solid #252535;border-radius:8px;padding:10px 12px">'
-            '<div class="section-label">Work Relevance</div>'
-            '<div class="section-text">' + work_rel + '</div>'
-          '</div>'
-        '</div>'
-        '<div style="background:#0a0a0f;border:1px solid #252535;border-radius:8px;padding:10px 14px;margin-bottom:10px">'
-          '<div class="section-label">Verdict</div>'
-          '<div class="verdict-text">' + verdict + '</div>'
-        '</div>'
-        '<div style="display:flex;gap:16px;margin-bottom:10px">'
-          '<div style="flex:1;background:#0a0a0f;border:1px solid #353550;border-radius:8px;padding:10px 12px">'
-            '<div class="section-label">Next Steps</div>'
-            '<div class="section-text">' + next_steps_html + '</div>'
-          '</div>'
-          '<div style="flex:1;background:#0a0a0f;border:1px solid #4488ff33;border-radius:8px;padding:10px 12px">'
-            '<div class="section-label">OpenCode Fit</div>'
-            '<div class="section-text">' + opencode_fit + '</div>'
-          '</div>'
-        '</div>'
-        + enrichment_html +
-        '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #252535;padding-top:8px">'
-          '<span style="color:#404060;font-size:11px">' + copy_btn + date + '</span>'
-          '<span style="font-size:11px">'
-            + (('<a href="' + raw_url + '" target="_blank" style="color:#44aaff;text-decoration:none;margin-right:10px">View source →</a>' if raw_url else '') or '<span style="color:#353550;font-size:10px;margin-right:10px">via ' + src_type + '</span>') +
-            'confidence ' + str(conf) + '%'
-            '<span style="display:inline-block;width:60px;height:4px;background:#252535;border-radius:2px;vertical-align:middle;margin-left:6px">'
-              '<span style="display:block;width:' + str(conf) + '%;height:100%;background:' + color + ';border-radius:2px"></span>'
-            '</span>'
-          '</span>'
-        '</div>'
-        '</div>'
-    )
+.strategy-card { background: #0f0f18; border: 1px solid #4488ff33; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
+.metric-box { background: #0a0a0f; border: 1px solid #252535; border-radius: 8px; padding: 12px; text-align: center; }
+.metric-value { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 700; }
+.metric-label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: #404060; }
+.win { color: #00ff88; }
+.loss { color: #ff4466; }
+</style>""", unsafe_allow_html=True)
 
 
 # ─── AUTH GATE ────────────────────────────────────────────────────────────────
 if not st.session_state.get("authenticated"):
     st.markdown(
-        '<div class="signal-header" style="text-align:center;margin-top:40px">SIGNAL</div>'
-        '<div class="signal-sub" style="text-align:center">Tech Intelligence Digest</div>',
+        '<div class="signal-header" style="text-align:center;margin-top:40px">📈 TRADING SIGNALS</div>'
+        '<div class="signal-sub" style="text-align:center">Financial Intelligence & Strategy Dashboard</div>',
         unsafe_allow_html=True,
     )
 
@@ -294,10 +121,184 @@ if not st.session_state.get("authenticated"):
     st.stop()
 
 
+# ─── RENDERERS ────────────────────────────────────────────────────────────────
+
+
+def render_analysis_card(entry):
+    """Render a financial analysis entry as a styled card."""
+    cat = entry.get("category", "neutral")
+    color = CAT_COLORS.get(cat, "#888")
+    label = CAT_LABELS.get(cat, cat)
+
+    raw_conf = entry.get("confidence", 0.8)
+    if isinstance(raw_conf, str):
+        try:
+            raw_conf = float(raw_conf)
+        except ValueError:
+            raw_conf = 0.8
+    conf = round(raw_conf * 100)
+
+    tags = entry.get("tags", [])
+    tickers = entry.get("tickers", [])
+    date = entry.get("created_at", "")[:10]
+
+    cat_tag = f'<span class="tag" style="color:{color};border-color:{color};background:rgba(0,0,0,0.3)">{label}</span>'
+
+    ticker_tags = ""
+    for t in tickers:
+        ticker_tags += f'<span class="tag" style="color:#ffcc00;border-color:#ffcc0033;background:rgba(255,204,0,0.08)">${t}</span>'
+
+    topic_tags = ""
+    for t in tags:
+        topic_tags += f'<span class="tag" style="color:#7070a0;border-color:#353550">{t}</span>'
+
+    src_type = entry.get("source_type", "?")
+    src_tag = f'<span class="tag" style="color:#7070a0;border-color:#353550">{src_type}</span>'
+
+    raw_url = entry.get("raw_url")
+    summary = entry.get("summary", "")
+    verdict = entry.get("verdict", "")
+    market_impact = entry.get("market_impact", "")
+    key_metrics = entry.get("key_metrics", [])
+    catalyst_date = entry.get("catalyst_date", "")
+    next_steps_raw = entry.get("next_steps", [])
+
+    # Metrics
+    metrics_html = ""
+    if key_metrics:
+        metrics_html = '<div style="margin:10px 0;background:#0a0a0f;border:1px solid #252535;border-radius:8px;padding:10px 12px">'
+        metrics_html += '<div class="section-label">Key Metrics</div>'
+        for m in key_metrics:
+            metrics_html += f'<div style="font-size:11px;color:#a0a0c0;margin:2px 0">▸ {m}</div>'
+        metrics_html += '</div>'
+
+    # Catalyst date
+    cat_date_html = ""
+    if catalyst_date:
+        cat_date_html = f'<span class="tag" style="color:#ff66aa;border-color:#ff66aa33">📅 {catalyst_date}</span>'
+
+    # Next steps
+    next_steps_html = ""
+    for s in next_steps_raw:
+        next_steps_html += "▸ " + str(s) + "<br>"
+    if not next_steps_html:
+        next_steps_html = "none"
+
+    # AI copy prompt
+    ai_prompt = (
+        f"{entry.get('title', 'Untitled')}\n\n"
+        f"Summary: {summary}\n\n"
+        f"Verdict: {verdict}\n\n"
+        f"Category: {label}\n"
+        f"Tickers: {', '.join(tickers)}\n"
+        f"Market Impact: {market_impact}\n"
+        f"Source: {raw_url or src_type}"
+    )
+    encoded_prompt = urllib.parse.quote(ai_prompt)
+    copy_btn = (
+        f'<button class="sl-copy-btn" data-clipboard="{encoded_prompt}" '
+        f'style="background:none;border:1px solid #353550;color:#44aaff;border-radius:4px;'
+        f'padding:2px 8px;font-size:10px;cursor:pointer;margin-right:10px">'
+        f'📋 Copy</button>'
+    )
+
+    # Market impact
+    impact_html = ""
+    if market_impact:
+        impact_html = (
+            '<div style="background:#0a0a0f;border:1px solid #252535;border-radius:8px;padding:10px 14px;margin-bottom:10px">'
+            '<div class="section-label">Market Impact</div>'
+            f'<div class="section-text">{market_impact}</div>'
+            '</div>'
+        )
+
+    return (
+        '<div class="card" style="border-left-color:' + color + '">'
+        '<div class="card-title">' + entry.get("title", "Untitled") + '</div>'
+        '<div style="margin-bottom:10px">' + cat_tag + src_tag + cat_date_html + ticker_tags + topic_tags + '</div>'
+        '<div class="section-text" style="margin-bottom:12px">' + summary + '</div>'
+        + impact_html +
+        '<div style="background:#0a0a0f;border:1px solid #252535;border-radius:8px;padding:10px 14px;margin-bottom:10px">'
+          '<div class="section-label">Verdict</div>'
+          '<div class="verdict-text">' + verdict + '</div>'
+        '</div>'
+        + metrics_html +
+        '<div style="display:flex;gap:16px;margin-bottom:10px">'
+          '<div style="flex:1;background:#0a0a0f;border:1px solid #353550;border-radius:8px;padding:10px 12px">'
+            '<div class="section-label">Next Steps</div>'
+            '<div class="section-text">' + next_steps_html + '</div>'
+          '</div>'
+        '</div>'
+        '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #252535;padding-top:8px">'
+          '<span style="color:#404060;font-size:11px">' + copy_btn + date + '</span>'
+          '<span style="font-size:11px">'
+            + (('<a href="' + raw_url + '" target="_blank" style="color:#44aaff;text-decoration:none;margin-right:10px">View source →</a>' if raw_url else '') or '<span style="color:#353550;font-size:10px;margin-right:10px">via ' + src_type + '</span>') +
+            'confidence ' + str(conf) + '%'
+            '<span style="display:inline-block;width:60px;height:4px;background:#252535;border-radius:2px;vertical-align:middle;margin-left:6px">'
+              '<span style="display:block;width:' + str(conf) + '%;height:100%;background:' + color + ';border-radius:2px"></span>'
+            '</span>'
+          '</span>'
+        '</div>'
+        '</div>'
+    )
+
+
+def render_strategy_card(strategy):
+    """Render a trading strategy in a compact card."""
+    ticker = strategy.get("ticker", "?")
+    strat_type = strategy.get("strategy_type", "?")
+    direction = strategy.get("direction", "neutral")
+    status = strategy.get("status", "active")
+    confidence = strategy.get("confidence", 0.5)
+    risk = strategy.get("risk_level", "medium")
+
+    # Status badge
+    status_colors = {
+        "active": "#4488ff",
+        "entered": "#aa66ff",
+        "monitoring": "#ffaa00",
+        "closed_win": "#00ff88",
+        "closed_loss": "#ff4466",
+        "expired": "#606080",
+        "cancelled": "#404060",
+    }
+    status_color = status_colors.get(status, "#606080")
+
+    # Direction icon
+    dir_icons = {"bullish": "🔼", "bearish": "🔽", "neutral": "➡️"}
+    dir_icon = dir_icons.get(direction, "➡️")
+
+    # P&L
+    pnl = strategy.get("pnl_pct")
+    pnl_str = ""
+    if pnl is not None:
+        cls = "win" if pnl >= 0 else "loss"
+        pnl_str = f'<span class="{cls}" style="font-weight:700">{pnl:+.2f}%</span>'
+
+    return f"""
+    <div class="strategy-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div>
+                <span style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700">{dir_icon} {ticker}</span>
+                <span class="tag" style="color:{status_color};border-color:{status_color}33;background:rgba(0,0,0,0.3)">{status.upper()}</span>
+                <span class="tag" style="color:#7070a0;border-color:#353550">{strat_type}</span>
+            </div>
+            <div style="font-size:11px;color:#808090">Risk: {risk} · Conf: {confidence:.0%} {pnl_str}</div>
+        </div>
+        <div style="font-size:11px;color:#a0a0c0;margin-bottom:6px">{strategy.get('rationale', '')}</div>
+        <div style="display:flex;gap:20px;font-size:11px;color:#606080">
+            <div><span style="color:#7070a0">Entry:</span> {strategy.get('suggested_entry', 'N/A')}</div>
+            <div><span style="color:#ff4466">Stop:</span> {strategy.get('stop_loss', 'none') or 'none'}</div>
+            <div><span style="color:#00ff88">Target:</span> {strategy.get('take_profit', 'none') or 'none'}</div>
+        </div>
+    </div>
+    """
+
+
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<div class="signal-header">SIGNAL</div>', unsafe_allow_html=True)
-    st.markdown('<div class="signal-sub">Tech Intelligence Digest</div>', unsafe_allow_html=True)
+    st.markdown('<div class="signal-header">📈 TRADING SIGNALS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="signal-sub">Financial Intelligence & Strategy Dashboard</div>', unsafe_allow_html=True)
     st.divider()
 
     st.markdown("**Provider**")
@@ -319,76 +320,135 @@ with st.sidebar:
     tier_map = {"Auto (per source type)": None, "Light": "light", "Default": "default", "Deep": "deep"}
     tier_override = tier_map[tier_choice]
 
-    st.markdown("**Enrichment**")
-    run_enrich = st.checkbox("Research entities + find repos", value=True,
-                              help="After analysis, extracts tools/repos and searches GitHub for real resources")
+    # Generate strategies toggle
+    gen_strategies = st.checkbox("Generate trading strategies", value=True,
+                                  help="After analysis, generate actionable trading strategies")
 
-    if st.button("Lock", use_container_width=True):
+    if st.button("🔒 Lock", use_container_width=True):
         st.session_state["authenticated"] = False
         st.rerun()
 
     st.divider()
 
-    st.markdown("**New Entry**")
-    input_text = st.text_area(
-        "Paste content or URL",
-        height=180,
-        placeholder="Paste article text, a URL, Instagram post, tweet thread...\n\nURLs are fetched and scraped automatically.",
-        label_visibility="collapsed",
-    )
-    source_override = st.selectbox("Source type", [
-        "Auto-detect", "Article", "URL", "Instagram", "Tweet", "Newsletter", "Note"
-    ])
-    analyze_btn = st.button("ANALYZE", use_container_width=True, type="primary")
+    # ── Tabs in sidebar ──
+    sidebar_tab = st.radio("", ["New Entry", "Portfolio", "Risk Profile"], label_visibility="collapsed")
+
+    if sidebar_tab == "New Entry":
+        st.markdown("**New Entry**")
+        input_text = st.text_area(
+            "Paste financial news or URL",
+            height=180,
+            placeholder="Paste article text, URL to financial news article, earnings report...\n\nURLs are fetched and scraped automatically.",
+            label_visibility="collapsed",
+        )
+        source_override = st.selectbox("Source type", [
+            "Auto-detect", "Article", "URL"
+        ])
+        analyze_btn = st.button("📊 ANALYZE", use_container_width=True, type="primary")
+
+    elif sidebar_tab == "Portfolio":
+        st.markdown("**Current Holdings**")
+        holdings = get_holdings()
+        if holdings:
+            for h in holdings:
+                col1, col2 = st.columns([3, 1])
+                col1.markdown(f"**${h.get('ticker', '?')}** — {h.get('shares', 0)} shares @ ${h.get('avg_cost', 0):.2f}")
+                if col2.button("✕", key=f"rm_holding_{h.get('ticker')}", help="Remove"):
+                    remove_holding(h.get('ticker', ''))
+                    st.rerun()
+        else:
+            st.caption("No holdings configured.")
+
+        st.markdown("**Add Holding**")
+        add_ticker = st.text_input("Ticker", placeholder="AAPL", key="add_ticker", label_visibility="collapsed")
+        col1, col2 = st.columns(2)
+        add_shares = col1.number_input("Shares", min_value=1, value=1, key="add_shares")
+        add_cost = col2.number_input("Avg Cost", min_value=0.01, value=100.0, key="add_cost", format="%.2f")
+        if st.button("Add Holding", use_container_width=True):
+            if add_ticker.strip():
+                add_holding(add_ticker.strip(), int(add_shares), float(add_cost))
+                st.toast(f"Added {add_ticker.upper()}", icon="✅")
+                st.rerun()
+
+        st.divider()
+        st.markdown("**Watchlist**")
+        watchlist = get_watchlist()
+        if watchlist:
+            st.markdown(", ".join(f"**${w}**" for w in watchlist))
+        wl_ticker = st.text_input("Add to watchlist", placeholder="TICKER", key="wl_add", label_visibility="collapsed")
+        if st.button("Add to Watchlist", use_container_width=True):
+            if wl_ticker.strip():
+                add_to_watchlist(wl_ticker.strip())
+                st.toast(f"Added ${wl_ticker.upper()}", icon="⭐")
+                st.rerun()
+
+    elif sidebar_tab == "Risk Profile":
+        profile = get_risk_profile()
+        risk_tolerance = st.selectbox("Risk Tolerance",
+            ["conservative", "moderate", "aggressive"],
+            index=["conservative", "moderate", "aggressive"].index(profile.get("risk_tolerance", "moderate")))
+        trading_style = st.selectbox("Trading Style",
+            ["value", "growth", "momentum", "income", "blend"],
+            index=["value", "growth", "momentum", "income", "blend"].index(profile.get("trading_style", "growth")))
+        experience = st.selectbox("Experience Level",
+            ["beginner", "intermediate", "advanced"],
+            index=["beginner", "intermediate", "advanced"].index(profile.get("experience_level", "intermediate")))
+        max_pos = st.slider("Max Position Size (%)", 5, 100, profile.get("max_position_size_pct", 25))
+        account_value = st.number_input("Account Value ($)", min_value=0, value=profile.get("account_value", 0), step=1000)
+
+        if st.button("Save Profile", use_container_width=True, type="primary"):
+            set_risk_profile({
+                "risk_tolerance": risk_tolerance,
+                "trading_style": trading_style,
+                "experience_level": experience,
+                "max_position_size_pct": max_pos,
+                "account_value": float(account_value),
+                "max_drawdown_pct": profile.get("max_drawdown_pct", 15),
+            })
+            st.toast("Profile saved", icon="✅")
 
     st.divider()
 
+    # ── Feed Controls ──
     st.markdown("**Filter Feed**")
-    search_query = st.text_input("Search", placeholder="keyword...", label_visibility="collapsed")
+    search_query = st.text_input("Search", placeholder="keyword or $TICKER...", label_visibility="collapsed")
     cat_filter = st.multiselect(
         "Categories",
         options=list(CAT_LABELS.keys()),
-        format_func=lambda x: CAT_LABELS[x],
+        format_func=lambda x: f"{CAT_LABELS[x]} — {CAT_DESCRIPTIONS.get(x, '')}",
         label_visibility="collapsed",
     )
 
+    # ── Current View Toggle ──
     st.divider()
+    view_mode = st.radio("View", ["📰 Feed", "📊 Strategies"], label_visibility="collapsed")
 
+    st.divider()
     entries_all = load_entries()
     if entries_all:
-        md_lines = ["# SIGNAL — Tech Intelligence Digest", "_Exported " + datetime.now().strftime("%Y-%m-%d") + "_", ""]
+        md_lines = ["# TRADING SIGNALS — Financial Intelligence", "_Exported " + datetime.now().strftime("%Y-%m-%d") + "_", ""]
         for cat, label in CAT_LABELS.items():
             group = [e for e in entries_all if e.get("category") == cat]
             if not group:
                 continue
             md_lines += ["## " + label, ""]
             for e in group:
-                steps = "\n".join("- " + s for s in e.get("next_steps", []))
-                raw_exp_conf = e.get("confidence", 0.8)
-                if isinstance(raw_exp_conf, str):
-                    try:
-                        raw_exp_conf = float(raw_exp_conf)
-                    except ValueError:
-                        raw_exp_conf = 0.8
                 md_lines += [
                     "### " + e.get("title", "Untitled"),
-                    "**Tags:** " + ", ".join(e.get("tags", [])) + " | **Date:** " + e.get("created_at", "")[:10],
+                    "**Tickers:** " + ", ".join(e.get("tickers", [])) + " | **Date:** " + e.get("created_at", "")[:10],
                     "", e.get("summary", ""), "",
-                    "**Implementability:** " + e.get("implementability", ""),
-                    "**Work Relevance:** " + e.get("work_relevance", ""),
+                    "**Market Impact:** " + e.get("market_impact", ""),
                     "**Verdict:** _" + e.get("verdict", "") + "_",
-                    "**Next Steps:**\n" + steps,
-                    "**OpenCode Fit:** " + e.get("opencode_fit", ""),
-                    "**Confidence:** " + str(round(raw_exp_conf * 100)) + "%",
+                    "**Confidence:** " + str(round((e.get("confidence", 0.8) or 0.8) * 100)) + "%",
                     "", "---", ""
                 ]
         st.download_button("Export Markdown", "\n".join(md_lines),
-                           file_name="signal-digest.md", mime="text/markdown",
+                           file_name="trading-signals-digest.md", mime="text/markdown",
                            use_container_width=True)
         st.download_button("Export JSON", json.dumps(entries_all, indent=2),
-                           file_name="signal-digest.json", mime="application/json",
+                           file_name="trading-signals-digest.json", mime="application/json",
                            use_container_width=True)
-        if st.button("Clear All", use_container_width=True):
+        if st.button("🗑️ Clear All", use_container_width=True):
             if st.session_state.get("confirm_clear"):
                 get_db().truncate()
                 st.session_state.confirm_clear = False
@@ -399,128 +459,213 @@ with st.sidebar:
 
 
 # ─── ANALYSIS TRIGGER ─────────────────────────────────────────────────────────
-if analyze_btn and input_text.strip():
+if sidebar_tab == "New Entry" and analyze_btn and input_text.strip():
     raw_input = input_text.strip()
     detected = detect_input_type(raw_input) if source_override == "Auto-detect" else source_override.lower()
 
     content = raw_input
     fetch_notice = None
-    instagram_meta = None
-    repo_data = []
 
     if re.match(r"https?://", raw_input):
-        if detected == "instagram":
-            with st.spinner("Fetching Instagram post..."):
-                content, instagram_meta = fetch_instagram_content(raw_input)
-                notice_parts = ["Fetched Instagram post"]
-                if instagram_meta:
-                    m = instagram_meta
-                    if m.get("is_video"):
-                        notice_parts.append("reel")
-                    if m.get("transcript") and not m["transcript"].startswith("[transcription error"):
-                        notice_parts.append("audio transcript")
-                fetch_notice = " · ".join(notice_parts) + f" ({len(content)} chars)"
-        else:
-            with st.spinner("Fetching " + raw_input[:60] + "..."):
-                content = fetch_url_content(raw_input)
-                fetch_notice = "Fetched " + str(len(content)) + " chars from URL"
-
-    # Scan all content for repo references and auto-fetch metadata
-    if content and not content.startswith("[Could not"):
-        enriched, repo_data = enrich_with_repos(content, raw_input)
-        if repo_data:
-            content = enriched
-            n = len(repo_data)
-            fetch_notice = (fetch_notice or "Ready") + f" · {n} repo{'s' if n > 1 else ''} found"
+        with st.spinner("Fetching " + raw_input[:60] + "..."):
+            content = fetch_url_content(raw_input)
+            if content.startswith("[Could not"):
+                st.error(content)
+                st.stop()
+            fetch_notice = f"Fetched {len(content)} chars from URL"
+            # Auto-detect tickers from URL content
+            detected_tickers = extract_tickers(content)
+            if detected_tickers:
+                fetch_notice += f" · detected ${', '.join(detected_tickers[:3])}"
 
     with st.spinner(f"Analyzing via {provider}..."):
         try:
             result = analyze_content(content, detected, provider, tier_override)
-            enrichment = run_enrichment(content, result, provider) if run_enrich else None
+            # If no tickers in analysis, try to extract them
+            if not result.get("tickers"):
+                result["tickers"] = extract_tickers(content)[:5]
+
             entry = {
                 "id": str(int(time.time() * 1000)),
                 "created_at": datetime.now().isoformat(),
                 "raw_url": raw_input if re.match(r"https?://", raw_input) else None,
                 "source_type": detected,
-                "instagram_meta": instagram_meta,
-                "repos": repo_data,
                 **result,
-                "enrichment": enrichment or {},
             }
-            save_entry(entry)
+            saved_id = save_entry(entry)
+
+            # Generate strategies if enabled
+            strategies = []
+            if gen_strategies:
+                with st.spinner("Generating trading strategies..."):
+                    portfolio_context = build_portfolio_context()
+                    strategies = create_strategies(entry, portfolio_context, provider)
+
             if fetch_notice:
                 st.toast(fetch_notice, icon="✅")
-            st.toast("Entry added to feed", icon="📥")
+            msg = "Entry added"
+            if strategies:
+                msg += f" · {len(strategies)} strategy/ies generated"
+            st.toast(msg, icon="📊")
             st.rerun()
         except Exception as e:
             st.error("Analysis failed: " + str(e))
 
-elif analyze_btn:
-    st.sidebar.warning("Paste some content first.")
 
+# ─── MAIN CONTENT ─────────────────────────────────────────────────────────────
 
-# ─── MAIN FEED ────────────────────────────────────────────────────────────────
-entries = load_entries()
+# Category legend
+legend_html = ""
+for cat, label in CAT_LABELS.items():
+    color = CAT_COLORS.get(cat, "#888")
+    legend_html += f'<span class="tag" style="color:{color};border-color:{color}33;background:rgba(0,0,0,0.2)">{label}</span> '
+st.markdown(f'<div style="margin-bottom:10px">{legend_html}</div>', unsafe_allow_html=True)
 
-if cat_filter:
-    entries = [e for e in entries if e.get("category") in cat_filter]
-if search_query:
-    q = search_query.lower()
-    entries = [e for e in entries if
-               q in e.get("title", "").lower() or
-               q in e.get("summary", "").lower() or
-               q in e.get("verdict", "").lower() or
-               any(q in t.lower() for t in e.get("tags", []))]
+if view_mode == "📰 Feed":
+    # ─── FEED VIEW ──────────────────────────────────────────────────────────────
+    entries = load_entries()
 
-all_entries = load_entries()
+    if cat_filter:
+        entries = [e for e in entries if e.get("category") in cat_filter]
+    if search_query:
+        q = search_query.lower()
+        entries = [e for e in entries if
+                   q in e.get("title", "").lower() or
+                   q in e.get("summary", "").lower() or
+                   q in e.get("verdict", "").lower() or
+                   any(q in t.lower() for t in e.get("tags", [])) or
+                   any(q in t.lower() for t in e.get("tickers", []))]
 
-from signald.config import CAT_LABELS
+    all_entries = load_entries()
 
-# Build dynamic metric columns for all categories that have actual entries
-cat_counts = {}
-for e in all_entries:
-    cat = e.get("category", "none") or "none"
-    cat_counts[cat] = cat_counts.get(cat, 0) + 1
+    # Metric columns
+    cat_counts = {}
+    for e in all_entries:
+        cat = e.get("category", "none") or "none"
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
 
-# Build column list: Total + every category with entries (in defined order)
-metric_categories = [c for c in CAT_LABELS if cat_counts.get(c, 0) > 0]
-num_cols = 1 + len(metric_categories)
-cols = st.columns(num_cols)
-with cols[0]:
-    st.metric("Total", len(all_entries))
-for i, cat in enumerate(metric_categories):
-    with cols[i + 1]:
-        st.metric(CAT_LABELS[cat], cat_counts.get(cat, 0))
+    metric_categories = [c for c in CAT_LABELS if cat_counts.get(c, 0) > 0]
+    cols = st.columns(1 + len(metric_categories))
+    with cols[0]:
+        st.metric("📊 Total Signals", len(all_entries))
+    for i, cat in enumerate(metric_categories):
+        with cols[i + 1]:
+            st.metric(CAT_LABELS[cat], cat_counts.get(cat, 0))
 
-st.divider()
+    st.divider()
 
-feed_col, _ = st.columns([3, 0.01])
+    feed_col = st.container()
+    with feed_col:
+        st.markdown(f"**Financial Intelligence Feed** — {len(entries)} entry/ies")
 
-with feed_col:
-    st.markdown("**Intelligence Feed** — " + str(len(entries)) + (" entry" if len(entries) == 1 else " entries"))
+        if not entries:
+            st.info("Feed is empty. Paste a financial article or URL in the sidebar and hit Analyze.")
+        else:
+            for entry in entries:
+                st.markdown(render_analysis_card(entry), unsafe_allow_html=True)
 
-    if not entries:
-        st.info("Feed is empty. Paste an article, URL, or post in the sidebar and hit Analyze.")
-    else:
-        for entry in entries:
-            cat    = entry.get("category", "watch")
-            color  = CAT_COLORS.get(cat, "#888")
-            label  = CAT_LABELS.get(cat, cat)
-            raw_conf = entry.get("confidence", 0.8)
-            if isinstance(raw_conf, str):
-                try:
-                    raw_conf = float(raw_conf)
-                except ValueError:
-                    raw_conf = 0.8
-            conf = round(raw_conf * 100)
-            tags   = entry.get("tags", [])
-            date   = entry.get("created_at", "")[:10]
-            doc_id = entry.doc_id
+                # Show associated strategies for this entry
+                entry_id = entry.get("id", "")
+                strats = load_strategies(entry_id=entry_id)
+                if strats:
+                    with st.expander(f"📈 Trading Strategies ({len(strats)})", expanded=len(strats) > 0):
+                        for s in strats:
+                            st.markdown(render_strategy_card(s), unsafe_allow_html=True)
+                            # Strategy status controls
+                            sid = s.get("id", "")
+                            status = s.get("status", "active")
+                            cols_s = st.columns([1, 1, 1, 1, 2])
+                            if status in ("active", "monitoring") and cols_s[0].button("🎯 Enter", key=f"enter_{sid}"):
+                                update_strategy_status(sid, "entered")
+                                st.rerun()
+                            if status == "entered" and cols_s[0].button("✅ Close Win", key=f"win_{sid}"):
+                                update_strategy_status(sid, "closed_win")
+                                st.rerun()
+                            if status == "entered" and cols_s[1].button("❌ Close Loss", key=f"loss_{sid}"):
+                                update_strategy_status(sid, "closed_loss")
+                                st.rerun()
+                            if status in ("active", "entered") and cols_s[2].button("👀 Monitor", key=f"mon_{sid}"):
+                                update_strategy_status(sid, "monitoring")
+                                st.rerun()
+                            if status == "active" and cols_s[3].button("🗑️ Cancel", key=f"cancel_{sid}"):
+                                update_strategy_status(sid, "cancelled")
+                                st.rerun()
 
-            st.markdown(render_card(entry, color, label, conf, tags, date), unsafe_allow_html=True)
+                doc_id = entry.doc_id
+                strategy_col, delete_col = st.columns([5, 1])
+                if delete_col.button("🗑️ Delete", key="del_" + str(doc_id), help="Remove this entry"):
+                    delete_entry(doc_id)
+                    st.rerun()
 
-            if st.button("Delete", key="del_" + str(doc_id), help="Remove this entry"):
-                delete_entry(doc_id)
+                st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
+
+elif view_mode == "📊 Strategies":
+    # ─── STRATEGIES VIEW ────────────────────────────────────────────────────────
+
+    stats = get_strategy_stats()
+
+    # Metric row
+    mcols = st.columns(6)
+    mcols[0].metric("📊 Total Strategies", stats.get("total", 0))
+    mcols[1].metric("🟡 Active", stats.get("active", 0))
+    mcols[2].metric("📌 Entered", stats.get("entered", 0))
+    mcols[3].metric("✅ Wins", stats.get("closed_win", 0))
+    mcols[4].metric("❌ Losses", stats.get("closed_loss", 0))
+    win_rate = stats.get("win_rate", 0)
+    wr_color = "normal" if win_rate >= 50 else "inverse"
+    mcols[5].metric("🏆 Win Rate", f"{win_rate}%", delta_color=wr_color)
+
+    st.divider()
+
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    status_filter = col1.selectbox("Status", ["All", "active", "entered", "closed_win", "closed_loss", "monitoring", "cancelled", "expired"])
+    risk_filter_val = col2.selectbox("Risk", ["All", "low", "medium", "high"])
+    ticker_filter = col3.text_input("Ticker filter", placeholder="$AAPL")
+
+    st.divider()
+
+    strats_all = load_strategies()
+    if status_filter != "All":
+        strats_all = [s for s in strats_all if s.get("status") == status_filter]
+    if risk_filter_val != "All":
+        strats_all = [s for s in strats_all if s.get("risk_level") == risk_filter_val]
+    if ticker_filter:
+        tf = ticker_filter.upper().replace("$", "")
+        strats_all = [s for s in strats_all if s.get("ticker", "").upper() == tf]
+
+    if not strats_all:
+        st.info("No strategies yet. Analyze financial news to generate trading strategies.")
+
+    for s in strats_all:
+        st.markdown(render_strategy_card(s), unsafe_allow_html=True)
+
+        # Status management
+        sid = s.get("id", "")
+        status = s.get("status", "active")
+        with st.expander("Manage", expanded=False):
+            row1 = st.columns(5)
+            if status in ("active", "monitoring") and row1[0].button("🎯 Mark Entered", key=f"st_enter_{sid}"):
+                entry_price = st.session_state.get(f"ep_{sid}")
+                update_strategy_status(sid, "entered", entry_price=entry_price)
+                st.rerun()
+            if status == "entered":
+                if row1[1].button("✅ Win", key=f"st_win_{sid}"):
+                    exit_price = st.session_state.get(f"xp_{sid}")
+                    update_strategy_status(sid, "closed_win", exit_price=exit_price)
+                    st.rerun()
+                if row1[2].button("❌ Loss", key=f"st_loss_{sid}"):
+                    exit_price = st.session_state.get(f"xp_{sid}")
+                    update_strategy_status(sid, "closed_loss", exit_price=exit_price)
+                    st.rerun()
+                if row1[3].button("👀 Monitor", key=f"st_mon_{sid}"):
+                    update_strategy_status(sid, "monitoring")
+                    st.rerun()
+            if row1[4].button("🗑️ Delete", key=f"st_del_{sid}"):
+                delete_strategy(sid)
                 st.rerun()
 
-            st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
+            # Entry/Exit price inputs
+            row2 = st.columns(2)
+            ep = row2[0].number_input("Entry Price", value=0.0, format="%.2f", key=f"ep_{sid}")
+            xp = row2[1].number_input("Exit Price", value=0.0, format="%.2f", key=f"xp_{sid}")

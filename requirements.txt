@@ -6,7 +6,5 @@ lxml>=5.0.0
 tinydb>=4.8.0
 pandas>=2.0.0
 trafilatura>=1.8.0
-instaloader>=4.12
-openai-whisper>=20231117
 feedparser>=6.0.0
 mcp>=1.0.0

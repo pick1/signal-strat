@@ -1,42 +1,44 @@
-# SIGNAL — Tech Intelligence Digest
+# 📈 TRADING SIGNALS — Financial Intelligence & Strategy Dashboard
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.40-FF4B4B?logo=streamlit&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-local-000?logo=ollama&logoColor=white)
-![Whisper](https://img.shields.io/badge/Whisper-transcription-00E676?logo=openai&logoColor=white)
 ![OpenCode Zen](https://img.shields.io/badge/OpenCode_Zen-remote-00BFA5)
 ![TinyDB](https://img.shields.io/badge/TinyDB-database-FFA000)
 ![MCP](https://img.shields.io/badge/MCP-server-7B68EE)
 ![License](https://img.shields.io/badge/license-MIT-808080)
 
-A personal tech intelligence dashboard. Paste articles, URLs, Instagram posts, tweets, or notes — SIGNAL fetches the content, analyzes it via LLM, and produces structured intelligence reports with categories, verdicts, and actionable next steps.
+> **Forked from [SIGNAL — Tech Intelligence Digest](https://github.com/pick1/signal_tech_news)**. Retooled for financial news analysis and automated trading strategy generation.
 
-Built with Streamlit, Ollama, and friends.
+Paste financial articles, earnings reports, SEC filings, or market news URLs — TRADING SIGNALS analyzes them via LLM and generates actionable trading strategies calibrated to your Robinhood portfolio, risk profile, and trading style.
 
 ## Features
 
-- **Multi-source ingestion** — URLs, Instagram (with reel audio transcription via Whisper), tweets, newsletters, notes
-- **Multi-model analysis** — Ollama (local) or OpenAI-compatible API (OpenCode Zen, etc.)
-- **Model tiers** — Light (fast), Default (balanced), Deep (heavy reasoning) — auto-routed by content type
-- **Auto-fallback** — if primary provider fails, seamlessly falls back to the other
-- **GitHub repo enrichment** — auto-detects repos in content and fetches metadata (stars, topics, license)
-- **6-category classification** — Viable, Work, Vaporware, Redundant, Watch, Mixed — with confidence scoring
+- **Financial news ingestion** — Paste URLs or article text from Yahoo Finance, Seeking Alpha, Bloomberg, Reuters, CNBC, SEC EDGAR, and more
+- **LLM-powered analysis** — Classifies content as Bullish, Bearish, Neutral, Catalyst, Swing, Macro, or Earnings Play with structured analysis
+- **Ticker extraction** — Auto-detects stock ticker symbols from article content
+- **Trading strategy generation** — Produces 1-3 actionable strategies per analysis with entry conditions, stop loss, take profit, time horizon, and position sizing
+- **Portfolio context** — Configure your current holdings, watchlist, risk tolerance, and account size for personalized strategies
+- **Strategy tracking** — Track entries, exits, and P&L for each strategy; monitor win rate
+- **Multi-model support** — Ollama (local) or OpenAI-compatible API (OpenCode Zen, etc.)
+- **Auto-fallback** — Seamlessly falls back between providers
+- **MCP server** — Exposes the analysis and strategy database for Hermes Agent, OpenCode, Claude Code
 - **Export** — Markdown or JSON for sharing
-- **MCP server** — exposes the intelligence database as MCP tools for Hermes Agent, OpenCode, Claude Code, etc.
 - **Password auth** — SHA256-gated access
-- **Dark cyberpunk UI** — green-on-black Syne + DM Mono aesthetic
+- **Dark cyberpunk UI** — Green-on-black Syne + DM Mono aesthetic
 
 ## Requirements
 
 - **Python 3.10+**
 - **Ollama** — with at least one model pulled (default: `qwen3:14b`)
-- **Optional:** OpenAI-compatible API key for remote model support
+- **Optional:** OpenAI-compatible API key for remote model support (OpenCode Zen, etc.)
 
 ## Quick Start
 
 ```bash
-# Clone / enter the project
-cd signal
+# Clone
+git clone https://github.com/pick1/trading-signals.git
+cd trading-signals
 
 # Create virtual environment
 python3 -m venv venv
@@ -55,31 +57,47 @@ Open http://localhost:5757 — set a password on first launch.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SIGNAL_API_PROVIDER` | `ollama` | Default provider: `ollama` or `openai` |
-| `SIGNAL_OPENAI_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible API endpoint |
-| `SIGNAL_OPENAI_API_KEY` | — | API key for OpenAI-compatible provider |
-| `SIGNAL_OPENAI_MODEL` | `deepseek-v4-flash-free` | Model name for OpenAI provider |
-| `SIGNAL_FALLBACK_ENABLED` | `true` | Auto-fallback between providers on failure |
+| `TRADING_API_PROVIDER` | `ollama` | Default provider: `ollama` or `openai` |
+| `TRADING_OPENAI_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible API endpoint |
+| `TRADING_OPENAI_API_KEY` | — | API key for OpenAI-compatible provider |
+| `TRADING_OPENAI_MODEL` | `deepseek-v4-flash-free` | Model name for OpenAI provider |
+| `TRADING_FALLBACK_ENABLED` | `true` | Auto-fallback between providers on failure |
+| `ROBINHOOD_USERNAME` | — | Robinhood username (optional, for context) |
+| `ROBINHOOD_PASSWORD` | — | Robinhood password (optional) |
 
 ## Model Configuration
 
-Configure model tiers in `app.py` under `MODEL_TIERS`:
+Configure model tiers in `trading_signals/config.py` under `MODEL_TIERS`:
 
 ```python
 MODEL_TIERS = {
     "light":   {"ollama": "qwen3:latest",       "openai": "deepseek-v4-flash-free"},
-    "default": {"ollama": "qwen3:14b",          "openai": "deepseek-v4-flash-free"},
+    "default": {"ollama": "gemma4:e4b",         "openai": "deepseek-v4-flash-free"},
     "deep":    {"ollama": "deepseek-r1:14b",    "openai": "nemotron-3-super-free"},
 }
 ```
 
-Content-type routing (tweet/instagram → light, article/url → default) is in `SOURCE_TIER`.
+## How It Works
+
+1. **Paste content** — A financial article URL or raw text
+2. **Fetch & extract** — Content is scraped (trafilatura + BS4), tickers auto-detected
+3. **LLM Analysis** — The content is analyzed with a financial analyst system prompt, producing category, verdict, market impact, key metrics
+4. **Strategy Generation** — A second LLM call generates 1-3 trading strategies calibrated to your portfolio context
+5. **Track** — Monitor strategy status, log entries/exits, track P&L
+
+### Analysis Categories
+
+| Category | Description |
+|----------|-------------|
+| 🟢 **Bullish** | Positive sentiment — stock likely to appreciate |
+| 🔴 **Bearish** | Negative sentiment — stock likely to decline |
+| ⚪ **Neutral** | Balanced or uncertain |
+| 🟣 **Catalyst** | Upcoming event could move the stock |
+| 🔵 **Swing** | Short-to-medium term momentum play |
+| 🟡 **Macro** | Macroeconomic trend affecting multiple sectors |
+| 🔵 **Earnings** | Pre/post earnings report analysis |
 
 ## MCP Server
-
-SIGNAL ships with an MCP server that exposes its database as tools for any MCP client (Hermes Agent, OpenCode, Claude Code, etc.).
-
-### Standalone
 
 ```bash
 # stdio transport (for Hermes/OpenCode integration)
@@ -95,46 +113,79 @@ Add to `~/.hermes/config.yaml`:
 
 ```yaml
 mcp_servers:
-  signal:
-    command: "/path/to/signal/venv/bin/python"
-    args: ["/path/to/signal/mcp_server.py"]
+  trading-signals:
+    command: "/path/to/trading-signals/venv/bin/python"
+    args: ["/path/to/trading-signals/mcp_server.py"]
     timeout: 30
 ```
 
-Available tools (prefixed `mcp_signal_`):
-- `signal_list_entries` — list with optional category filter
-- `signal_search_entries` — keyword search across titles, summaries, verdicts
-- `signal_get_entry` — full entry by ID
-- `signal_get_stats` — feed statistics (category breakdown, top tags)
-- `signal_export` — export as JSON or Markdown
+Available tools (prefixed `ts_`):
+- `ts_list_entries` — list with optional category filter
+- `ts_search_entries` — keyword search across titles, summaries, verdicts, tickers
+- `ts_get_entry` — full entry by ID
+- `ts_get_stats` — feed statistics (category breakdown, top tickers)
+- `ts_list_strategies` — list trading strategies with optional filters
+- `ts_get_strategy_stats` — aggregate strategy performance
+- `ts_analyze_and_generate` — end-to-end: analyze content + generate strategies
 
 ### Resources
-- `signal://entries` — all entries
-- `signal://stats` — feed statistics
+- `trading-signals://entries` — all entries
+- `trading-signals://stats` — feed statistics
+- `trading-signals://strategies` — all strategies
 
 ## Systemd Service
 
 ```bash
-sudo cp signal.service /etc/systemd/system/
+sudo cp trading-signals.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable signal
-sudo systemctl start signal
+sudo systemctl enable trading-signals
+sudo systemctl start trading-signals
 ```
 
 Runs on port 5757 by default.
 
+## Portfolio Management
+
+Configure your trading context in the **Portfolio** and **Risk Profile** sidebar tabs:
+- Add current holdings (ticker, shares, average cost)
+- Build a watchlist
+- Set risk tolerance (conservative/moderate/aggressive)
+- Configure account value and max position size
+- Set trading style and experience level
+
+Strategy generation automatically uses this context to produce relevant, appropriately-sized recommendations.
+
 ## Project Structure
 
 ```
-signal/
-├── app.py            # Main Streamlit application
-├── mcp_server.py     # MCP server for external tool integration
-├── requirements.txt  # Python dependencies
-├── signal.service    # Systemd unit file
+trading-signals/
+├── app.py                          # Main Streamlit application
+├── mcp_server.py                   # MCP server for external tool integration
+├── requirements.txt                # Python dependencies
+├── trading-signals.service         # Systemd unit file
 ├── .streamlit/
-│   └── config.toml   # Streamlit theme & server config
+│   └── config.toml                 # Streamlit theme & server config
 ├── data/
-│   ├── signal.json   # TinyDB database (entries)
-│   └── .password_hash # Auth hash (auto-created)
-└── venv/             # Virtual environment
+│   ├── trading_signals.json        # TinyDB database (analysis entries)
+│   ├── strategies.json             # TinyDB database (trading strategies)
+│   ├── portfolio.json              # TinyDB database (portfolio context)
+│   └── .password_hash              # Auth hash (auto-created)
+├── trading_signals/                # Package
+│   ├── __init__.py
+│   ├── config.py                   # Configuration, categories, prompts
+│   ├── analyzer.py                 # LLM analysis + strategy generation
+│   ├── db.py                       # TinyDB operations
+│   ├── scrapers.py                 # Content fetching (no Instagram/Whisper)
+│   ├── strategy_engine.py          # Strategy lifecycle management
+│   ├── portfolio.py                # Portfolio & risk profile management
+│   └── auth.py                     # Password authentication
+└── venv/                           # Virtual environment
 ```
+
+## License
+
+MIT — Forked from [SIGNAL](https://github.com/pick1/signal_tech_news).
+
+## Disclaimer
+
+**For educational and research purposes only.** This tool generates trading strategy suggestions based on LLM analysis of financial news. It does not constitute financial advice. Always do your own research before making trading decisions. Past performance does not guarantee future results.
