@@ -14,6 +14,7 @@ build/
 
 # Data files
 data/*.json
+data/.password_hash
 !data/.gitkeep
 
 # Streamlit
